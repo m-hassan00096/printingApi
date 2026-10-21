@@ -62,6 +62,23 @@ class BankAccountTest extends PaymentDestinationTestCase
         $this->assertSame(1, BankAccount::where('is_default', DefaultStatus::DEFAULT->value)->count());
     }
 
+    public function test_deselecting_oldest_active_bank_can_keep_it_as_default(): void
+    {
+        $oldest = $this->createAccount();
+        $other = $this->createAccount(['accountNumber' => '000087']);
+
+        // The oldest active account may be selected again as the fallback.
+        $this->patchJson($this->bankUrl($oldest->id), [
+            'isDefault' => 0,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.isDefault', 1);
+
+        $this->assertSame(DefaultStatus::DEFAULT, $oldest->fresh()->is_default);
+        $this->assertSame(DefaultStatus::NOT_DEFAULT, $other->fresh()->is_default);
+        $this->assertSame(1, BankAccount::where('is_default', DefaultStatus::DEFAULT->value)->count());
+    }
+
     public function test_deactivating_default_promotes_another_active_account(): void
     {
         $default = $this->createAccount();
