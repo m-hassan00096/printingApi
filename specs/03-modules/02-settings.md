@@ -624,7 +624,7 @@ Feature specifications derived from this reference must be able to demonstrate t
 ### Lookup values
 
 1. Only backend-seeded technical parameter groups exist; unauthorized callers cannot invent a new group through an API.
-2. Printing locations accept only name and status; customer types accept name, optional description and status.
+2. Printing locations and customer types both accept a required name, optional nullable description and integer status.
 3. Duplicate names in **one group** fail after trim; the same name in **different groups** is allowed.
 4. A `parameter_value` cannot change to another `parameter_id` through client input.
 5. An inactive/wrong-group/deleted value is rejected for **new** customer-type or printing-location assignment.
