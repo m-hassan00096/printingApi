@@ -146,6 +146,51 @@ class BankAccountTest extends PaymentDestinationTestCase
             ->assertJsonValidationErrors(['bankName', 'accountNumber', 'status']);
     }
 
+    public function test_default_flag_is_enum_in_model_and_integer_in_api(): void
+    {
+        $first = $this->createAccount();
+        $second = $this->createAccount(['accountNumber' => '000000999']);
+
+        $this->assertSame(DefaultStatus::DEFAULT, $first->is_default);
+        $this->assertSame(DefaultStatus::NOT_DEFAULT, $second->is_default);
+
+        $this->getJson($this->bankUrl($first->id))
+            ->assertOk()
+            ->assertJsonPath('data.isDefault', 1);
+        $this->getJson($this->bankUrl($second->id))
+            ->assertOk()
+            ->assertJsonPath('data.isDefault', 0);
+
+        $this->patchJson($this->bankUrl($second->id), ['isDefault' => 1])
+            ->assertOk()
+            ->assertJsonPath('data.isDefault', 1);
+
+        $this->assertSame(DefaultStatus::NOT_DEFAULT, $first->fresh()->is_default);
+        $this->assertSame(DefaultStatus::DEFAULT, $second->fresh()->is_default);
+    }
+
+    public function test_default_flag_rejects_boolean_and_out_of_range_values(): void
+    {
+        $account = $this->createAccount();
+
+        foreach ([true, false, 2, -1] as $invalid) {
+            $this->postJson($this->bankUrl(), $this->bankPayload([
+                'accountNumber' => 'new-number',
+                'isDefault' => $invalid,
+            ]))
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('isDefault');
+
+            $this->patchJson($this->bankUrl($account->id), [
+                'isDefault' => $invalid,
+            ])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('isDefault');
+        }
+
+        $this->assertSame(DefaultStatus::DEFAULT, $account->fresh()->is_default);
+    }
+
     public function test_invalid_status_and_default_are_rejected(): void
     {
         $this->postJson($this->bankUrl(), $this->bankPayload([
