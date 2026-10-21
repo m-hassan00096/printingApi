@@ -125,6 +125,10 @@ abstract class ParameterValueTestCase extends TestCase
 
     protected function loginAs(User $user): void
     {
+        // Sanctum persists the previous user's password hash in the test session
+        // after an authenticated API request. Clear it before switching identities.
+        $this->flushSession();
+
         $this->actingAs($user, 'web');
         Auth::guard('sanctum')->forgetUser();
     }
