@@ -2,68 +2,70 @@
 
 **Branch:** `feature/settings-module`  
 **Target:** `develop`  
-**Scope:** Laravel Settings CRUD, shared Selects, migrations, enums, validation, authorization, default selection, seeders and feature tests.
+**Scope:** Laravel Settings CRUD, select providers, database schema, validation, authorization, default selection, seeders and feature tests.
 
-## Review outcome
+## Review verdict
 
-**Conditionally ready for PR review, not yet certified for production-integrated Finance or Customers workflows.** This is a static repository review. The suite last reported by the developer was **169 passing tests (682 assertions)** *before* the review changes; all new review tests must be run locally before approval. No merge or PR creation is included in this review.
+**Conditionally ready for a Pull Request review, but not certified for production-integrated Customers / Production / Finance workflows.** This is a static GitHub repository review. The latest local result reported by the developer **before** these review changes was **169 passing Settings tests (682 assertions)**. The current branch contains **177 discovered Settings test methods**; the newly added/modified tests must be rerun locally. No Pull Request or merge was made as part of this review.
 
-### Verified structure
+## Verified structure
 
-- ParameterValues, Bank Accounts and E-Wallets expose the intended CRUD routes, and all are protected with `auth:sanctum` plus operation-level Spatie permissions.
-- Requests own API validation; Actions and `PaymentDestinationDefaultService` own mutations; QueryBuilder services handle allowlisted pagination/search/status filters.
-- Payment defaults use a shared integer-backed `DefaultStatus` enum with bank and wallet types managed separately. The Selects API returns numeric `isDefault`, with active-only options and masked account/phone identifiers.
-- Technical lookup groups are seeded idempotently. Bank/wallet creation is user-driven rather than pre-populated with banking details.
-- Soft-deleted values are excluded from ordinary index and select queries. Parameter-value names are permanently unique within a group. Bank/wallet identifiers are presently unique even after soft deletion.
+- Parameter Values, Bank Accounts and E-Wallets use `auth:sanctum` plus operation-level Spatie permissions on CRUD routes.
+- FormRequests validate API fields; mutation Actions / `PaymentDestinationDefaultService` handle writes; QueryBuilder services allowlist index filters/sorts.
+- `printing_locations` and `customer_types` use backend-controlled groups; **both now accept optional nullable `description`** on create/update, in accordance with the latest owner decision.
+- Payment destinations use the shared int-backed `DefaultStatus` enum; management resources and shared Selects expose numeric `isDefault` (`0` or `1`).
+- Bank/wallet Selects only include active, non-soft-deleted options and mask account/mobile identifiers.
+- A transactional lock row per payment type coordinates default changes through the shared service on MySQL. Bank and wallet defaults are independent.
+- `parameter_values` has a group-scoped unique name constraint including soft-deleted records. Bank account numbers and wallet phones are unique across active and soft-deleted rows.
+- `SettingsDatabaseSeeder` exists and runs idempotent technical-parameter and permission seeders. It never seeds real or dummy payment destinations.
+- Management resources expose full account/phone identifiers only behind the corresponding management view permission.
 
-## Findings resolved on this branch
+## Findings addressed during review
 
-| Priority | Finding | Resolution |
+| Priority | Finding | Resolution on `feature/settings-module` |
 |---|---|---|
-| Medium | Printing locations could accept and persist a nonempty `description`, contradicting the approved name-and-status-only data contract. | Store and Update FormRequests now reject nonempty `description` for the `printing_locations` group; added focused Feature Tests. Customer type descriptions remain supported. |
-| Low | No single Settings seeder entrypoint combined technical-group and permission initialization. | Added `SettingsDatabaseSeeder` and tests for idempotency and no bank/wallet seed records. |
-| Contract | `isDefault: 0` for the current oldest active default may reselect that same record through the fallback algorithm. | Explicitly **accepted by the owner**; preserved current algorithm and added bank and wallet Regression Tests rather than forcing a different candidate. |
-| Documentation | Old spec statements still described implemented bank/wallet APIs as proposed and printing-location description restrictions as untested. | Updated the module specification accordingly. |
+| Medium — contract | Printing-location `description` was prohibited in Store/Update despite the owner's latest instruction to allow it. | Removed group-specific `prohibitedIf` validation. Replaced contradictory feature tests with create/update/clear-description cases. Updated `SET-004` and relevant spec sections. |
+| Medium — stale mutation | A previously route-bound ParameterValue could be soft-deleted by another request while remaining loaded in an in-flight Delete Action. | Delete Action now re-queries a non-deleted row inside a transaction with `lockForUpdate`, rejecting stale records rather than silently deleting again. Added a targeted stale-model regression test. |
+| Low — test isolation | ParameterValue tests could switch users after a stateful admin request while retaining Sanctum's previous password hash in the test session. | Cleared the test session before `actingAs` in the shared test helper. Added a regression expecting a permission-based `403` instead of an authentication `401`. |
+| Low — setup | A dedicated aggregate Settings seeder was needed for the standard module-seed flow. | `SettingsDatabaseSeeder` is present, delegates to `ParameterSeeder` and `SettingsPermissionSeeder`, and has coverage for idempotency and avoiding payment seed data. |
+| Documentation | Existing spec sections disagreed about printing-location descriptions. | Updated field definitions, request behavior and acceptance criteria to reflect nullable description support for both lookup groups. |
 
-## Remaining risks / integration gates
+## Outstanding integration risks and decisions
 
-### 1. Historical-use restrictions — important before cross-module use
+### 1. Historical-use restrictions — important before other modules integrate
 
-Current Settings Delete Actions do not yet check Customer, Production or Finance usage, and the customer-type update route does not check whether active customers currently reference the type before deactivation. **These restrictions must be implemented when the owning tables/relationships become available, before allowing deletion or deactivation of in-use records.**
+Settings cannot yet enforce the rule forbidding deletion of values already referenced by Customers, Production, receipts or advance payments. Customer-type deactivation also cannot be blocked for currently associated customers until those relationships/tables exist.
 
-Once other modules reference Settings data, the owning modules must also validate the exact lookup group, active/not-deleted eligibility on new selections, and persist required historic snapshots. Until then, do not treat Settings DELETE as safe against historic business records.
+**Before the owning modules start storing references**, implement historical-use restrictions, active/group eligibility checks, and required name/financial snapshots in the relevant integration paths. Do not assume passing Settings CRUD tests proves these future cross-module invariants.
 
-### 2. Default concurrency — validate on target MySQL
+### 2. Default concurrency — verify against the target MySQL deployment
 
-`PaymentDestinationDefaultService` serializes per-type changes using `settings_payment_default_locks` and transactional `lockForUpdate()`. This is appropriate for MySQL and independent bank/wallet defaults. **The feature suite uses SQLite in-memory**, where `FOR UPDATE` behavior does not exercise true concurrent MySQL locking.
+`PaymentDestinationDefaultService` uses `settings_payment_default_locks`, transactions and `lockForUpdate()` to serialize mutations per payment type. The current feature suite uses SQLite in memory and **does not reproduce concurrent MySQL requests**. Perform a concurrent create/update/default-switch smoke test on the target MySQL version. There is not yet a separate database constraint preventing multiple default rows if writes bypass the service.
 
-Before production rollout, run concurrent create/change-default requests against the deployed MySQL version. There is no additional database uniqueness constraint preventing multiple default rows if writes bypass the managed Action/Service. All writes must go through this service.
+### 3. Bank/wallet uniqueness after Soft Delete — decision still open (`SET-OPEN-01`)
 
-### 3. Unapproved bank/wallet identifier reuse
+`bank_accounts.account_number` and `e_wallets.phone` remain reserved after Soft Delete by their current unique indexes. This behavior is provisional pending business approval; do not change schema or silently approve number reuse during code review.
 
-`bank_accounts.account_number` and `e_wallets.phone` use simple unique indexes, reserving identifiers after Soft Delete. This is **provisional** until the owner resolves `SET-OPEN-01`. A change to reuse-on-delete rules requires intentional schema and validation changes.
+### 4. Replacement-default priority — decision still open (`SET-OPEN-02`)
 
-### 4. Replacement-default priority
+When multiple active candidates exist, the implementation chooses the oldest ID. The owner accepted that explicitly submitting `isDefault: 0` on the oldest active default may leave it selected again. The general fallback-priority policy remains provisional.
 
-The current fallback selects the oldest eligible active row (`id ASC`). Exact fallback priority with multiple candidates remains open (`SET-OPEN-02`). The owner specifically accepts the possibility that `isDefault: 0` on the current default leaves it as the selected default when the fallback picks the same row.
+### 5. Illustrative lookup seed values
 
-### 5. Optional example lookup values
+`SettingsDatabaseSeeder` creates the technical lookup groups and permissions, not example `parameter_values`. The spec still includes illustrative example names; confirm whether example records should be seeded on installations before adding user-visible data. Avoid guessing banking credentials or customer/payment data.
 
-`SettingsDatabaseSeeder` initializes parameter groups and permissions only; it does not add the illustrative editable `parameter_values` mentioned in the spec. If the business requires initial customer-type/printing-location examples on first install, approve their exact labels first and add a safe, idempotent seeder. No bank or wallet sample credentials should be inserted.
-
-## Required local verification before PR
+## Final checks before PR
 
 ```powershell
 git pull origin feature/settings-module
 
 php artisan test --testsuite="Settings Module"
 php artisan test
+
 php artisan route:list --path=api/v1/settings
 php artisan route:list --path=api/v1/selects
 ```
 
-**Expected suite discovery after review:** 175 Settings tests (169 previously passing + 6 new review tests). Do not claim a passing result for the new tests until executed.
+**Expected Settings test discovery: 177 tests, not yet freshly executed after these review changes.** Run new migrations and `SettingsDatabaseSeeder` against a disposable development database. Do not call these new tests passing until the developer reports their result.
 
-Verify migration and seeding on a disposable, non-production database. Test `SettingsDatabaseSeeder` idempotency, and confirm the desired policy for `SET-OPEN-01` and `SET-OPEN-02` before irreversible production commitments.
-
-**Review boundary:** No changes made to `develop`; no automatic merge or PR created.
+No merge to `develop` and no PR creation were performed during this review.
