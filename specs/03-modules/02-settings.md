@@ -260,10 +260,11 @@ No `deleted_at` or user-managed status is required for backend-owned group defin
 | `name` | `VARCHAR(150)` | Required, unique within the same group after normalization. |
 | `description` | `TEXT NULL` | Optional for customer types; `NULL` for printing locations. |
 | `status` | `TINYINT` | Required, `0` or `1`. |
+| `created_by`, `updated_by` | `BIGINT UNSIGNED NULL` | Optional FKs to `users.id`; populated with authenticated actor on model create/update; nullable for seeders/CLI. |
 | `created_at`, `updated_at` | Timestamps | Laravel timestamps. |
 | `deleted_at` | Nullable timestamp | Soft Delete. |
 
-Indexes: `parameter_id`, `(parameter_id, status, deleted_at)` for lookup queries where justified; **group-scoped normalized-name uniqueness**, including or excluding soft-deleted rows **only after §18 is resolved**.
+Indexes in the initial migration: non-unique `(parameter_id, name)` and `(parameter_id, status, deleted_at)`. Group-scoped name uniqueness must still be enforced by validation; add the final database unique constraint **after SET-OPEN-01 is approved**, including the soft-deleted-name reservation rule.
 
 ### 11.3 `bank_accounts`
 
@@ -274,6 +275,7 @@ Indexes: `parameter_id`, `(parameter_id, status, deleted_at)` for lookup queries
 | `account_number` | `VARCHAR(50)` | Required, unique after approved normalization. |
 | `is_default` | `BOOLEAN` | At most one eligible default across active accounts. |
 | `status` | `TINYINT` | Required, `0` or `1`. |
+| `created_by`, `updated_by` | `BIGINT UNSIGNED NULL` | Optional FKs to `users.id`; populated with authenticated actor on model create/update; nullable for seeders/CLI. |
 | `created_at`, `updated_at` | Timestamps | Laravel timestamps. |
 | `deleted_at` | Nullable timestamp | Soft Delete. |
 
@@ -290,8 +292,11 @@ No IBAN column. Uniqueness on deleted rows remains subject to §18.
 | `payment_link` | `TEXT NULL` | Optional free text. |
 | `is_default` | `BOOLEAN` | At most one eligible default across active wallets. |
 | `status` | `TINYINT` | Required, `0` or `1`. |
+| `created_by`, `updated_by` | `BIGINT UNSIGNED NULL` | Optional FKs to `users.id`; populated with authenticated actor on model create/update; nullable for seeders/CLI. |
 | `created_at`, `updated_at` | Timestamps | Laravel timestamps. |
 | `deleted_at` | Nullable timestamp | Soft Delete. |
+
+**Shared audit columns for Settings business tables:** `parameter_values`, `bank_accounts` and `e_wallets` (and future user-managed business tables) require Laravel `softDeletes()` plus nullable `created_by` and `updated_by` foreign keys to Identity `users.id`. Use the reusable migration trait `App\\Database\\Migrations\\Concerns\\HasCreatedUpdatedByColumns` for the actor columns and the model trait `App\\Models\\Concerns\\CreatedUpdatedBy` for automatic actor stamping and `createdBy`/`updatedBy` relationships. `created_by` is stamped on insert and `updated_by` on later updates when an authenticated actor is available; otherwise the fields remain nullable. The actor relationships include soft-deleted users; physical deletion of referenced users is restricted. **Do not add these audit columns or Soft Deletes to backend-only `parameters`.** No deletion-actor history is requested.
 
 ### 11.5 Relationship outline (cross-module, not new Settings tables)
 
