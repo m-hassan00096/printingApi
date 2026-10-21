@@ -581,7 +581,7 @@ The following **proposed technical permissions** are owned by Settings and seede
 | `settings.e_wallets.create` | Create e-wallets. |
 | `settings.e_wallets.update` | Update wallet fields/default/status. |
 | `settings.e_wallets.delete` | Soft-delete eligible e-wallets. |
-| `settings.selects.view` | **Implemented:** read active printing locations and customer types via the shared Selects API; extend to bank accounts and e-wallets when those modules are implemented. |
+| `settings.selects.view` | **Implemented:** read all four active Settings option sources (`printingLocations`, `customerTypes`, `bankAccounts`, `eWallets`) via the shared Selects API. |
 
 - The generic parameter-value Index/Show/Create/Update/Delete APIs and the separate bank/wallet Index/Show/Create/Update/Delete APIs are implemented, with permission checks per operation. The common `settings.selects.view` permission now registers all four keys (`printingLocations`, `customerTypes`, `bankAccounts`, `eWallets`) with the numeric `isDefault` extension on bank/wallet options only. Historic-use deletion checks await owning-module integration.
 - Neither `admin` role name nor frontend visibility alone grants permission to perform an operation.
