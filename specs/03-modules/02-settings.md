@@ -50,7 +50,8 @@ This is the **business and technical reference** from which feature specificatio
 | Unauthenticated visitor | Cannot read options or manage any Settings record. |
 | Authenticated staff with `settings.selects.view` | May request approved active dropdown options for **all four Settings groups** through the shared selects endpoint; receives only approved option fields. |
 | Staff with a section's `.view` permission | May use that section's management list and detail APIs; bank account numbers and wallet phone numbers are displayed **in full** to those authorized viewers. |
-| Staff with a section's `.create`, `.update`, or `.delete` permission | May perform the corresponding operation, subject to validation and state/in-use protections. |
+| Staff with `settings.create_parameter_value` | May add a value to an existing technical parameter group using one shared create endpoint; this does not permit creating new parameter groups. |
+| Staff with other approved management write permissions | May perform their authorized updates/deletions and bank/wallet writes, subject to validation and state/in-use protections. |
 | Authorized production administrator | May change an order item's assigned printing location only while its printing stage is still open. This permission belongs to **Production**, not a name-based bypass in Settings. |
 | Finance staff with relevant Finance permission | May choose eligible destinations when recording customer receipts/advances. Actual postings and snapshots are governed by Finance. |
 
@@ -88,7 +89,7 @@ The following rows record **owner-confirmed decisions** from the Settings discus
 | SET-024 | A record with no historic references may be soft-deleted; once used by a historic operation, deletion is blocked and deactivation is the normal alternative, subject to other restrictions such as SET-013. |
 | SET-025 | No restore endpoint in v1. |
 | SET-026 | All four management lists offer search, status filter and pagination. |
-| SET-027 | CRUD permissions are separate per category; the **shared** selects permission is `settings.selects.view` for all four categories. |
+| SET-027 | The implemented parameter-value Create API uses the **shared** `settings.create_parameter_value` permission; other lookup-management and bank/wallet permissions are specified separately as their features are implemented. The shared selects permission remains `settings.selects.view`. |
 | SET-028 | The four Settings options are added to the existing `GET /api/v1/selects`; no new generic Selects module. |
 | SET-029 | Duplicate printing-location and customer-type names are rejected after trimming surrounding spaces. |
 | SET-030 | Seed starter parameter groups and illustrative customer-type/printing-location values; **do not seed actual or dummy bank accounts or wallets**. |
@@ -320,29 +321,22 @@ e_wallets (id) ────> Finance receipt / advance payment reference + snaps
 
 All routes are relative to `/api/v1`. Body fields use `camelCase`; database columns remain `snake_case`. Successful GET responses use the existing shared `{ "success": true, "message": "", "data": ... }` envelope, and management lists use the approved `data.items` / `data.pagination` structure. The project currently uses `auth:sanctum` and Spatie role/permission enforcement.
 
-The following resource-oriented endpoint names and HTTP update method are **proposed**; do not treat them as accepted until confirmed. The sample Identity reference uses `PUT` for consolidated full updates, while a prior Settings draft proposed `PATCH`; these Settings APIs propose **`PUT` for full updates** and require consistency review with the actual project conventions.
+The `POST /settings/parameter-values` create contract and permission are **approved**. Other management routes and HTTP update methods remain proposed until their respective features are implemented. The implementation does not expose public CRUD for `parameters` technical groups.
 
-### 12.1 Printing locations
-
-| Method | Path | Required permission | Behavior |
-|---|---|---|---|
-| `GET` | `/settings/printing-locations` | `settings.printing_locations.view` | Paginated list with search and status filter. |
-| `POST` | `/settings/printing-locations` | `settings.printing_locations.create` | Create named location with supplied status. |
-| `GET` | `/settings/printing-locations/{id}` | `settings.printing_locations.view` | Get details. |
-| `PUT` | `/settings/printing-locations/{id}` | `settings.printing_locations.update` | Update name/status, subject to constraints. |
-| `DELETE` | `/settings/printing-locations/{id}` | `settings.printing_locations.delete` | Soft-delete only if never used. |
-
-### 12.2 Customer types
+### 12.1 Parameter values — generic create (approved)
 
 | Method | Path | Required permission | Behavior |
 |---|---|---|---|
-| `GET` | `/settings/customer-types` | `settings.customer_types.view` | Paginated list with search and status filter. |
-| `POST` | `/settings/customer-types` | `settings.customer_types.create` | Create type with name, optional description and status. |
-| `GET` | `/settings/customer-types/{id}` | `settings.customer_types.view` | Get details. |
-| `PUT` | `/settings/customer-types/{id}` | `settings.customer_types.update` | Update details; cannot deactivate while assigned to customers. |
-| `DELETE` | `/settings/customer-types/{id}` | `settings.customer_types.delete` | Soft-delete only if never used. |
+| `POST` | `/settings/parameter-values` | `settings.create_parameter_value` | Create a value within an existing `parameters.id` group, using the shared CreateParameterValueAction. |
 
-### 12.3 Bank accounts and e-wallets
+- Request body uses `parameterId` (existing technical group ID), `name`, optional `description`, and integer `status` (`0` or `1`).
+- Unknown `parameterId` values fail validation; no parameter-group creation or arbitrary group-name editing is exposed.
+- This permission is intentionally common to the current and future parameter groups; a user granted it can add values to any existing group.
+- Lookup groups remain relationally distinct via `parameter_id`, and value-name uniqueness is scoped per group.
+- Existing business-specific rules continue to apply, including the current requirement that printing locations have only a user-facing name and status; implementation of that group-specific description restriction should be checked in tests before production use.
+- List/detail/update/delete routes for parameter values will be decided when those endpoints are implemented; the prior section-specific create routes are **not** part of the API.
+
+### 12.2 Bank accounts and e-wallets — proposed routes
 
 | Method | Path | Permission pattern | Behavior |
 |---|---|---|---|
@@ -357,7 +351,7 @@ The following resource-oriented endpoint names and HTTP update method are **prop
 | `PUT` | `/settings/e-wallets/{id}` | `settings.e_wallets.update` | Update wallet/default/status atomically. |
 | `DELETE` | `/settings/e-wallets/{id}` | `settings.e_wallets.delete` | Soft-delete only if never used. |
 
-**Do not** expose user-facing `POST /settings/parameters`, `PUT /settings/parameters/{id}` or generic `POST /settings/parameter-values` with an arbitrary group ID. Section-oriented APIs can share internal lookup Actions where this actually reduces duplication.
+**Do not** expose user-facing `POST /settings/parameters` or `PUT /settings/parameters/{id}`. The generic create endpoint accepts only an ID that already exists in the backend-seeded `parameters` table. The parameter groups themselves are not user-editable.
 
 ## 13. Example request and response payloads
 
@@ -366,11 +360,12 @@ These are **proposed wire contracts**, not assertions about currently implemente
 ### 13.1 Create printing location
 
 ```http
-POST /api/v1/settings/printing-locations
+POST /api/v1/settings/parameter-values
 ```
 
 ```json
 {
+  "parameterId": 1,
   "name": "مطبعة النور",
   "status": 1
 }
@@ -384,6 +379,7 @@ POST /api/v1/settings/printing-locations
   "message": "تم إضافة مكان الطباعة بنجاح.",
   "data": {
     "id": 7,
+    "parameterId": 1,
     "name": "مطبعة النور",
     "status": 1
   }
@@ -394,13 +390,14 @@ POST /api/v1/settings/printing-locations
 
 ```json
 {
+  "parameterId": 2,
   "name": "شركة",
   "description": "عملاء الشركات",
   "status": 1
 }
 ```
 
-`description` may be omitted or `null`. The frontend does **not** send `parameterId` for the above two business endpoints.
+`parameterId` is required for the single generic endpoint; IDs `1` and `2` above are illustrative and must come from the actual database. `description` may be omitted or `null`.
 
 ### 13.3 Create bank account
 
@@ -537,12 +534,11 @@ The following **proposed technical permissions** are owned by Settings and seede
 
 | Permission | Meaning |
 |---|---|
-| `settings.printing_locations.view` | View printing locations in management APIs. |
-| `settings.printing_locations.create` | Create printing location values. |
+| `settings.create_parameter_value` | **Implemented create permission:** add values to any existing parameter group through the shared API. |
+| `settings.printing_locations.view` | Proposed: view printing locations in management APIs. |
 | `settings.printing_locations.update` | Update printing location name/status. |
 | `settings.printing_locations.delete` | Soft-delete eligible printing locations. |
 | `settings.customer_types.view` | View customer types. |
-| `settings.customer_types.create` | Create customer types. |
 | `settings.customer_types.update` | Update customer type name/description/status. |
 | `settings.customer_types.delete` | Soft-delete eligible customer types. |
 | `settings.bank_accounts.view` | View bank accounts, including full account numbers. |
@@ -555,7 +551,7 @@ The following **proposed technical permissions** are owned by Settings and seede
 | `settings.e_wallets.delete` | Soft-delete eligible e-wallets. |
 | `settings.selects.view` | Read active options from all four Settings groups through shared selects. **Owner-approved literal key.** |
 
-- CRUD granularity and `settings.selects.view` are approved. Exact technical spellings of the **16 CRUD keys** above are proposed and must match the real naming standard/seeders.
+- The lookup Create API and literal permission `settings.create_parameter_value` are approved and implemented. Other per-section lookup read/update/delete permissions and bank/wallet CRUD permission names remain proposals until implementation. `settings.selects.view` remains the shared selects permission.
 - Neither `admin` role name nor frontend visibility alone grants permission to perform an operation.
 - A separate **Production-owned** permission governs administrator-only changes to an in-progress item's printing location; Settings `.update` is insufficient for changing production assignments.
 - Use parameterized/allowlisted filtering, safe database writes, CSRF-protected stateful API access and standard anti-leak handling. Payment destination account identifiers are not secret API keys but still must not be exposed to users without appropriate management authorization.
@@ -618,7 +614,7 @@ Feature specifications derived from this reference must be able to demonstrate t
 
 18. All four management lists support search, status filtering and pagination; inactive rows remain visible in management views.
 19. Soft deletion fails for ever-used records; soft-deleted rows disappear from normal selects and lists. Restoration is not exposed.
-20. Section CRUD permissions independently allow/deny each write and management read.
+20. The shared `settings.create_parameter_value` permission grants parameter-value creation through the generic endpoint; other management permissions enforce their applicable reads/writes when implemented.
 21. `settings.selects.view` alone enables the four active Settings option sources but does not grant full management view or write access.
 22. The shared aggregator rejects unknown keys with `422` and unauthorized requested keys with `403`; no partial leakage.
 23. GET success and all errors use the current project response conventions; validation errors keep public `camelCase` field names.
