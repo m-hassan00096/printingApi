@@ -36,15 +36,21 @@ class ParameterValueUpdateTest extends ParameterValueTestCase
         $this->assertSame($this->administrator->id, $value->updated_by);
     }
 
-    public function test_printing_location_description_cannot_be_added_during_update(): void
+    public function test_printing_location_description_can_be_added_and_cleared(): void
     {
         $location = $this->createValue($this->printingLocations, 'Main Printing House');
 
         $this->patchJson($this->url($location), [
-            'description' => 'Should never be stored for printing locations',
+            'description' => 'Digital and offset printing',
         ])
-            ->assertUnprocessable()
-            ->assertJsonValidationErrors('description');
+            ->assertOk()
+            ->assertJsonPath('data.description', 'Digital and offset printing');
+
+        $this->assertSame('Digital and offset printing', $location->fresh()->description);
+
+        $this->patchJson($this->url($location), ['description' => null])
+            ->assertOk()
+            ->assertJsonPath('data.description', null);
 
         $this->assertNull($location->fresh()->description);
     }
