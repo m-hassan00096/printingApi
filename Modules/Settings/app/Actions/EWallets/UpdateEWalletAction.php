@@ -2,6 +2,7 @@
 
 namespace Modules\Settings\Actions\EWallets;
 
+use Modules\Settings\Enums\DefaultStatus;
 use Modules\Settings\Models\EWallet;
 use Modules\Settings\Services\PaymentDestinationDefaultService;
 
@@ -27,7 +28,7 @@ class UpdateEWalletAction
             $eWallet,
             'e_wallets',
             $attributes,
-            array_key_exists('isDefault', $data) ? (bool) $data['isDefault'] : null,
+            array_key_exists('isDefault', $data) ? DefaultStatus::from((int) $data['isDefault']) : null,
         );
     }
 }
