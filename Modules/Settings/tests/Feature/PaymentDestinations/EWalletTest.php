@@ -172,6 +172,23 @@ class EWalletTest extends PaymentDestinationTestCase
         $this->assertSame(1, EWallet::where('is_default', DefaultStatus::DEFAULT->value)->count());
     }
 
+    public function test_deselecting_oldest_active_wallet_can_keep_it_as_default(): void
+    {
+        $oldest = $this->createWallet();
+        $other = $this->createWallet(['phone' => '01112345678']);
+
+        // The oldest active wallet may be selected again as the fallback.
+        $this->patchJson($this->walletUrl($oldest->id), [
+            'isDefault' => 0,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.isDefault', 1);
+
+        $this->assertSame(DefaultStatus::DEFAULT, $oldest->fresh()->is_default);
+        $this->assertSame(DefaultStatus::NOT_DEFAULT, $other->fresh()->is_default);
+        $this->assertSame(1, EWallet::where('is_default', DefaultStatus::DEFAULT->value)->count());
+    }
+
     public function test_deactivating_default_selects_next_active_wallet(): void
     {
         $first = $this->createWallet();
