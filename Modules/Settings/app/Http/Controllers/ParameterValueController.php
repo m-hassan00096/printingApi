@@ -8,8 +8,11 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Arr;
 use Modules\Settings\Actions\ParameterValues\CreateParameterValueAction;
+use Modules\Settings\Actions\ParameterValues\UpdateParameterValueAction;
 use Modules\Settings\Http\Requests\ParameterValues\StoreParameterValueRequest;
+use Modules\Settings\Http\Requests\ParameterValues\UpdateParameterValueRequest;
 use Modules\Settings\Http\Resources\ParameterValueResource;
+use Modules\Settings\Models\ParameterValue;
 
 class ParameterValueController extends Controller
 {
@@ -27,6 +30,21 @@ class ParameterValueController extends Controller
         return ApiResponse::success(
             data: (new ParameterValueResource($parameterValue))->resolve($request),
             status: HttpStatusCode::CREATED,
+        );
+    }
+
+    public function update(
+        UpdateParameterValueRequest $request,
+        ParameterValue $parameterValue,
+        UpdateParameterValueAction $updateParameterValueAction,
+    ): JsonResponse {
+        $parameterValue = $updateParameterValueAction->execute(
+            $parameterValue,
+            $request->validated(),
+        );
+
+        return ApiResponse::success(
+            data: (new ParameterValueResource($parameterValue))->resolve($request),
         );
     }
 }
