@@ -2,6 +2,7 @@
 
 namespace Modules\Settings\Actions\EWallets;
 
+use Modules\Settings\Enums\DefaultStatus;
 use Modules\Settings\Models\EWallet;
 use Modules\Settings\Services\PaymentDestinationDefaultService;
 
@@ -19,7 +20,7 @@ class CreateEWalletAction
                 'payment_link' => $data['paymentLink'] ?? null,
                 'status' => $data['status'],
             ],
-            (bool) ($data['isDefault'] ?? false),
+            DefaultStatus::from((int) ($data['isDefault'] ?? DefaultStatus::NOT_DEFAULT->value)),
         );
     }
 }
