@@ -93,6 +93,7 @@ The following rows record **owner-confirmed decisions** from the Settings discus
 | SET-028 | The four Settings options are added to the existing `GET /api/v1/selects`; no new generic Selects module. |
 | SET-029 | Duplicate printing-location and customer-type names are rejected after trimming surrounding spaces. |
 | SET-030 | Seed starter parameter groups and illustrative customer-type/printing-location values; **do not seed actual or dummy bank accounts or wallets**. |
+| SET-031 | A `parameter_values.name` remains permanently reserved within its `parameter_id` after Soft Delete. Enforce this with a database unique constraint on `(parameter_id, name)`, as well as request validation. Names remain reusable across **different** groups. |
 
 ## 4. Lookup model and parameter ownership
 
@@ -265,7 +266,7 @@ No `deleted_at` or user-managed status is required for backend-owned group defin
 | `created_at`, `updated_at` | Timestamps | Laravel timestamps. |
 | `deleted_at` | Nullable timestamp | Soft Delete. |
 
-Indexes in the initial migration: non-unique `(parameter_id, name)` and `(parameter_id, status, deleted_at)`. Group-scoped name uniqueness must still be enforced by validation; add the final database unique constraint **after SET-OPEN-01 is approved**, including the soft-deleted-name reservation rule.
+Indexes: the original `(parameter_id, name)` index is replaced by a **unique** `(parameter_id, name)` constraint in the subsequent `2026_10_21_000002_add_unique_index_to_parameter_values.php` migration; `(parameter_id, status, deleted_at)` remains indexed. Soft-deleted rows retain the reserved name; request validation also enforces this. Before migrating an existing database, check for duplicate `(parameter_id, name)` pairs and resolve them, otherwise the unique-index migration will fail.
 
 ### 11.3 `bank_accounts`
 
@@ -321,9 +322,9 @@ e_wallets (id) ────> Finance receipt / advance payment reference + snaps
 
 All routes are relative to `/api/v1`. Body fields use `camelCase`; database columns remain `snake_case`. Successful GET responses use the shared `{ "success": true, "message": "", "data": ... }` envelope. The implemented parameter-values index mirrors the Identity `UserCollection` structure, returning `data.parameters` and `data.pagination`; other proposed Settings management lists may use `data.items`. Routes use `auth:sanctum` and Spatie permissions.
 
-The generic parameter-value **Index, Show, Create and Update** endpoints below are implemented, each protected by the relevant shared permission. Delete and bank/wallet management routes remain proposed until implemented. No public CRUD for `parameters` technical groups is exposed.
+The generic parameter-value **Index, Show, Create, Update and Soft Delete** endpoints below are implemented, each protected by the relevant shared permission. Bank/wallet management routes remain proposed until implemented. No public CRUD for `parameters` technical groups is exposed.
 
-### 12.1 Parameter values — generic index, show, create and update (implemented)
+### 12.1 Parameter values — generic index, show, create, update and delete (implemented)
 
 | Method | Path | Required permission | Behavior |
 |---|---|---|---|
@@ -331,6 +332,7 @@ The generic parameter-value **Index, Show, Create and Update** endpoints below a
 | `GET` | `/settings/parameter-values/{parameterValue}` | `settings.view_parameter_values` | Show a non-deleted value by ID. |
 | `POST` | `/settings/parameter-values` | `settings.create_parameter_value` | Create a value within an existing `parameters.id` group, using the shared CreateParameterValueAction. |
 | `PUT` / `PATCH` | `/settings/parameter-values/{parameterValue}` | `settings.update_parameter_value` | Update a non-deleted value with UpdateParameterValueAction; its `parameter_id` cannot change. |
+| `DELETE` | `/settings/parameter-values/{parameterValue}` | `settings.delete_parameter_value` | Soft-delete a non-deleted parameter value using DeleteParameterValueAction; attempts to delete the same value again return 404. |
 
 - Create body uses `parameterId` (existing technical group ID), `name`, optional `description`, and integer `status` (`0` or `1`). Update body supports partial changes to `name`, `description` and `status`; clients cannot change `parameterId` or `parameter_id`.
 - Unknown `parameterId` values fail validation; no parameter-group creation or arbitrary group-name editing is exposed.
@@ -339,7 +341,8 @@ The generic parameter-value **Index, Show, Create and Update** endpoints below a
 - Existing business-specific rules continue to apply, including the current requirement that printing locations have only a user-facing name and status; implementation of that group-specific description restriction should be checked in tests before production use.
 - The index **requires** `parameterId` (exists in `parameters.id`); it supports `filter[search]` (searches `name` and `description` **only**), `filter[status]` (integer `0` or `1`), `page`, `perPage` (1–100, default 15), and `sort` (allowlist: `id`, `name`, `created_at`; default `-id`). The filter syntax follows Spatie QueryBuilder and the Identity users API. Other filters are rejected.
 - The collection uses `data.parameters` and `data.pagination` (`currentPage`, `lastPage`, `perPage`, `total`), and excludes soft-deleted rows by default. Show uses ParameterValueResource and does not require a `parameterId` query parameter.
-- Delete remains unimplemented; the prior section-specific create routes are **not** part of the API.
+- Delete returns the normal `ApiResponse::success()` response (`200`, `data: null`), never hard-deletes, and permanently reserves the deleted name within its group. The prior section-specific create routes are **not** part of the API.
+- **Integration constraint:** historical-use checks for Customer/Production associations must be enforced before those modules expose their associations to these values. Current Settings has no Customer or Production usage relationships; the present Delete Action does **not** yet block deletion of historically referenced values.
 - Input validation (required fields, enum status, trimmed names and group-scoped uniqueness) belongs to StoreParameterValueRequest and UpdateParameterValueRequest, not duplicated in Actions. The update Action handles the transactional row-locked write; the create Action writes through the Parameter relationship.
 
 ### 12.2 Bank accounts and e-wallets — proposed routes
@@ -543,6 +546,7 @@ The following **proposed technical permissions** are owned by Settings and seede
 | `settings.view_parameter_values` | **Implemented read permission:** index/show parameter values through the shared API. |
 | `settings.create_parameter_value` | **Implemented create permission:** add values to any existing parameter group through the shared API. |
 | `settings.update_parameter_value` | **Implemented update permission:** edit values of any existing parameter group through the shared API. |
+| `settings.delete_parameter_value` | **Implemented delete permission:** Soft Delete values from any group, subject to future historical-reference checks. |
 | `settings.printing_locations.view` | Proposed: view printing locations in management APIs. |
 | `settings.printing_locations.update` | Update printing location name/status. |
 | `settings.printing_locations.delete` | Soft-delete eligible printing locations. |
@@ -559,7 +563,7 @@ The following **proposed technical permissions** are owned by Settings and seede
 | `settings.e_wallets.delete` | Soft-delete eligible e-wallets. |
 | `settings.selects.view` | Read active options from all four Settings groups through shared selects. **Owner-approved literal key.** |
 
-- The generic parameter-value Index/Show/Create/Update APIs with `settings.view_parameter_values`, `settings.create_parameter_value`, and `settings.update_parameter_value` are implemented. Other lookup delete and bank/wallet CRUD permissions are proposals until implementation. `settings.selects.view` remains the shared selects permission.
+- The generic parameter-value Index/Show/Create/Update/Delete APIs with `settings.view_parameter_values`, `settings.create_parameter_value`, `settings.update_parameter_value`, and `settings.delete_parameter_value` are implemented. Bank/wallet CRUD permissions remain proposals until implementation. `settings.selects.view` remains the shared selects permission.
 - Neither `admin` role name nor frontend visibility alone grants permission to perform an operation.
 - A separate **Production-owned** permission governs administrator-only changes to an in-progress item's printing location; Settings `.update` is insufficient for changing production assignments.
 - Use parameterized/allowlisted filtering, safe database writes, CSRF-protected stateful API access and standard anti-leak handling. Payment destination account identifiers are not secret API keys but still must not be exposed to users without appropriate management authorization.
@@ -579,7 +583,7 @@ These questions are **not authorization to implement guessed behavior**. They re
 
 | ID | Open decision | Suggested default for discussion |
 |---|---|---|
-| SET-OPEN-01 | After a never-used record is soft-deleted, can its unique name/account number/phone be reused? | **Reserve unique values permanently** for clarity and simpler integrity; owner has asked for a recommendation but hasn't approved one. |
+| SET-OPEN-01 | After a never-used **bank account or e-wallet** is soft-deleted, can its unique account number / phone be reused? | Pending for bank accounts/e-wallets. **Resolved for `parameter_values`: group-scoped names are permanently reserved (SET-031).** |
 | SET-OPEN-02 | When a disabled default has multiple eligible replacement accounts, which becomes default? | Pick the **oldest active (`id ASC`)** deterministically; pending approval. |
 | SET-OPEN-03 | When the printing location's display name changes during active printing, should the final item snapshot reflect the name at printing **start** or **stage close**? | Capture/finalize at **stage close**, consistent with “final location”; pending approval. |
 | SET-OPEN-04 | Confirm existing orders (even not-yet-designed orders) always retain their originally stored price if customer type changes. | **Yes**, based on the latest discussion; earlier statement mentioned automatic repricing, so this needs explicit confirmation for the Services/Orders references. |
@@ -589,7 +593,7 @@ These questions are **not authorization to implement guessed behavior**. They re
 | SET-OPEN-08 | Final REST update method (`PUT` versus `PATCH`) and exact CRUD permission name notation to match current repository conventions. | Use the established current module conventions, not older sample documents. |
 | SET-OPEN-09 | If a printing location is made inactive while assigned to an item in an **open printing stage**, whether to allow completion without reassignment. | Preserve the existing assignment to avoid blocking work; new selections must require active locations. This is ultimately a Production workflow decision. |
 
-Until these decisions are approved, related tests and database indexes are preliminary. In particular, **do not finalize uniqueness indexes for soft-deleted data without SET-OPEN-01**.
+Until the remaining decisions are approved, related future-module tests and indexes are preliminary. The parameter-values unique index and soft-deleted-name reservation are now approved under SET-031; the bank/wallet soft-delete uniqueness policy remains open.
 
 ## 19. Testing and acceptance criteria
 
@@ -622,7 +626,7 @@ Feature specifications derived from this reference must be able to demonstrate t
 
 18. All four management lists support search, status filtering and pagination; inactive rows remain visible in management views.
 19. Soft deletion fails for ever-used records; soft-deleted rows disappear from normal selects and lists. Restoration is not exposed.
-20. Shared `settings.view_parameter_values`, `settings.create_parameter_value`, and `settings.update_parameter_value` permissions independently authorize read, create, and update through generic endpoints; other management permissions enforce their applicable reads/writes when implemented.
+20. Shared `settings.view_parameter_values`, `settings.create_parameter_value`, `settings.update_parameter_value`, and `settings.delete_parameter_value` permissions independently authorize read, create, update, and soft delete through generic endpoints; other management permissions enforce their applicable reads/writes when implemented.
 21. `settings.selects.view` alone enables the four active Settings option sources but does not grant full management view or write access.
 22. The shared aggregator rejects unknown keys with `422` and unauthorized requested keys with `403`; no partial leakage.
 23. GET success and all errors use the current project response conventions; validation errors keep public `camelCase` field names.
