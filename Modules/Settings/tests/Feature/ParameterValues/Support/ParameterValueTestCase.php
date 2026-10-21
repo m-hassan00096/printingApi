@@ -56,7 +56,7 @@ abstract class ParameterValueTestCase extends TestCase
             'web',
         ));
 
-        foreach (['create', 'update'] as $operation) {
+        foreach (['create', 'update', 'delete'] as $operation) {
             $permission = Permission::findOrCreate(
                 'settings.'.$operation.'_parameter_value',
                 'web',
