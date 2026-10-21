@@ -17,4 +17,7 @@ Route::middleware('auth:sanctum')
 
         Route::match(['put', 'patch'], 'parameter-values/{parameterValue}', [ParameterValueController::class, 'update'])
             ->middleware('permission:settings.update_parameter_value');
+
+        Route::delete('parameter-values/{parameterValue}', [ParameterValueController::class, 'destroy'])
+            ->middleware('permission:settings.delete_parameter_value');
     });
