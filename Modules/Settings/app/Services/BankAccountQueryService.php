@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Modules\Settings\Http\Requests\PaymentDestinations\IndexPaymentDestinationsRequest;
 use Modules\Settings\Models\BankAccount;
 use Spatie\QueryBuilder\AllowedFilter;
+use Spatie\QueryBuilder\AllowedSort;
 use Spatie\QueryBuilder\QueryBuilder;
 
 class BankAccountQueryService
@@ -25,7 +26,7 @@ class BankAccountQueryService
                 }),
                 AllowedFilter::exact('status'),
             ])
-            ->allowedSorts(...['id', 'bank_name', 'created_at'])
+            ->allowedSorts(...['id', AllowedSort::field('bankName', 'bank_name'), 'created_at'])
             ->defaultSort('-id')
             ->paginate($request->integer('perPage', 15))
             ->withQueryString();
