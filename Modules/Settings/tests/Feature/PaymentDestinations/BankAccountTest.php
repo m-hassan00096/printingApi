@@ -171,6 +171,19 @@ class BankAccountTest extends PaymentDestinationTestCase
             ->assertJsonPath('data.pagination.perPage', 1);
     }
 
+    public function test_can_sort_by_public_bank_name_field(): void
+    {
+        $this->createAccount(['bankName' => 'Zulu Bank']);
+        $first = $this->createAccount(['bankName' => 'Alpha Bank', 'accountNumber' => '002']);
+
+        $this->getJson($this->bankUrl(null, ['sort' => 'bankName']))
+            ->assertOk()
+            ->assertJsonPath('data.bankAccounts.0.id', $first->id);
+
+        $this->getJson($this->bankUrl(null, ['sort' => 'bank_name']))
+            ->assertStatus(400);
+    }
+
     public function test_index_search_matches_account_number_and_keeps_leading_zeroes(): void
     {
         $target = $this->createAccount(['accountNumber' => '000123']);
