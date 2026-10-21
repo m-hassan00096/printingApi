@@ -321,20 +321,22 @@ e_wallets (id) ────> Finance receipt / advance payment reference + snaps
 
 All routes are relative to `/api/v1`. Body fields use `camelCase`; database columns remain `snake_case`. Successful GET responses use the existing shared `{ "success": true, "message": "", "data": ... }` envelope, and management lists use the approved `data.items` / `data.pagination` structure. The project currently uses `auth:sanctum` and Spatie role/permission enforcement.
 
-The `POST /settings/parameter-values` create contract and permission are **approved**. Other management routes and HTTP update methods remain proposed until their respective features are implemented. The implementation does not expose public CRUD for `parameters` technical groups.
+The shared `POST /settings/parameter-values` create and `PUT`/`PATCH /settings/parameter-values/{parameterValue}` update contracts and their separate permissions are approved. Other management routes remain proposed until their respective features are implemented. The implementation does not expose public CRUD for `parameters` technical groups.
 
-### 12.1 Parameter values — generic create (approved)
+### 12.1 Parameter values — generic create and update (approved)
 
 | Method | Path | Required permission | Behavior |
 |---|---|---|---|
 | `POST` | `/settings/parameter-values` | `settings.create_parameter_value` | Create a value within an existing `parameters.id` group, using the shared CreateParameterValueAction. |
+| `PUT` / `PATCH` | `/settings/parameter-values/{parameterValue}` | `settings.update_parameter_value` | Update a non-deleted value with UpdateParameterValueAction; its `parameter_id` cannot change. |
 
-- Request body uses `parameterId` (existing technical group ID), `name`, optional `description`, and integer `status` (`0` or `1`).
+- Create body uses `parameterId` (existing technical group ID), `name`, optional `description`, and integer `status` (`0` or `1`). Update body supports partial changes to `name`, `description` and `status`; clients cannot change `parameterId` or `parameter_id`.
 - Unknown `parameterId` values fail validation; no parameter-group creation or arbitrary group-name editing is exposed.
-- This permission is intentionally common to the current and future parameter groups; a user granted it can add values to any existing group.
+- Create and update permissions are intentionally common to the current and future parameter groups; a user granted each permission can perform that operation for any existing group.
 - Lookup groups remain relationally distinct via `parameter_id`, and value-name uniqueness is scoped per group.
 - Existing business-specific rules continue to apply, including the current requirement that printing locations have only a user-facing name and status; implementation of that group-specific description restriction should be checked in tests before production use.
-- List/detail/update/delete routes for parameter values will be decided when those endpoints are implemented; the prior section-specific create routes are **not** part of the API.
+- List/detail/delete routes for parameter values will be decided when those endpoints are implemented; the prior section-specific create routes are **not** part of the API.
+- Input validation (required fields, enum status, trimmed names and group-scoped uniqueness) belongs to StoreParameterValueRequest and UpdateParameterValueRequest, not duplicated in Actions. The update Action handles the transactional row-locked write; the create Action writes through the Parameter relationship.
 
 ### 12.2 Bank accounts and e-wallets — proposed routes
 
@@ -535,6 +537,7 @@ The following **proposed technical permissions** are owned by Settings and seede
 | Permission | Meaning |
 |---|---|
 | `settings.create_parameter_value` | **Implemented create permission:** add values to any existing parameter group through the shared API. |
+| `settings.update_parameter_value` | **Implemented update permission:** edit values of any existing parameter group through the shared API. |
 | `settings.printing_locations.view` | Proposed: view printing locations in management APIs. |
 | `settings.printing_locations.update` | Update printing location name/status. |
 | `settings.printing_locations.delete` | Soft-delete eligible printing locations. |
@@ -551,7 +554,7 @@ The following **proposed technical permissions** are owned by Settings and seede
 | `settings.e_wallets.delete` | Soft-delete eligible e-wallets. |
 | `settings.selects.view` | Read active options from all four Settings groups through shared selects. **Owner-approved literal key.** |
 
-- The lookup Create API and literal permission `settings.create_parameter_value` are approved and implemented. Other per-section lookup read/update/delete permissions and bank/wallet CRUD permission names remain proposals until implementation. `settings.selects.view` remains the shared selects permission.
+- The lookup create/update APIs and literal permissions `settings.create_parameter_value` and `settings.update_parameter_value` are approved and implemented. Other lookup read/delete permissions and bank/wallet CRUD permission names remain proposals until implementation. `settings.selects.view` remains the shared selects permission.
 - Neither `admin` role name nor frontend visibility alone grants permission to perform an operation.
 - A separate **Production-owned** permission governs administrator-only changes to an in-progress item's printing location; Settings `.update` is insufficient for changing production assignments.
 - Use parameterized/allowlisted filtering, safe database writes, CSRF-protected stateful API access and standard anti-leak handling. Payment destination account identifiers are not secret API keys but still must not be exposed to users without appropriate management authorization.
@@ -614,7 +617,7 @@ Feature specifications derived from this reference must be able to demonstrate t
 
 18. All four management lists support search, status filtering and pagination; inactive rows remain visible in management views.
 19. Soft deletion fails for ever-used records; soft-deleted rows disappear from normal selects and lists. Restoration is not exposed.
-20. The shared `settings.create_parameter_value` permission grants parameter-value creation through the generic endpoint; other management permissions enforce their applicable reads/writes when implemented.
+20. Shared `settings.create_parameter_value` and `settings.update_parameter_value` permissions independently authorize creation and update through generic endpoints; other management permissions enforce their applicable reads/writes when implemented.
 21. `settings.selects.view` alone enables the four active Settings option sources but does not grant full management view or write access.
 22. The shared aggregator rejects unknown keys with `422` and unauthorized requested keys with `403`; no partial leakage.
 23. GET success and all errors use the current project response conventions; validation errors keep public `camelCase` field names.
