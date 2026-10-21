@@ -13,7 +13,7 @@ class BankAccountResource extends JsonResource
             'id' => $this->id,
             'bankName' => $this->bank_name,
             'accountNumber' => $this->account_number,
-            'isDefault' => $this->is_default,
+            'isDefault' => $this->is_default->value,
             'status' => $this->status->value,
         ];
     }
