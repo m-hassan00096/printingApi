@@ -10,15 +10,22 @@ class SettingsPermissionSeeder extends Seeder
 {
     public function run(): void
     {
-        $permission = Permission::firstOrCreate([
-            'name' => 'settings.create_parameter_value',
-            'guard_name' => 'web',
-        ]);
+        $permissions = [
+            'settings.create_parameter_value' => 'إضافة قيمة إعداد',
+            'settings.update_parameter_value' => 'تعديل قيمة إعداد',
+        ];
 
-        $permission->translations()->updateOrCreate(
-            ['locale' => 'ar'],
-            ['alias' => 'إضافة قيمة إعداد'],
-        );
+        foreach ($permissions as $name => $alias) {
+            $permission = Permission::firstOrCreate([
+                'name' => $name,
+                'guard_name' => 'web',
+            ]);
+
+            $permission->translations()->updateOrCreate(
+                ['locale' => 'ar'],
+                ['alias' => $alias],
+            );
+        }
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
