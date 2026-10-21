@@ -4,7 +4,9 @@ namespace Modules\Settings\Tests\Feature\ParameterValues;
 
 require_once __DIR__.'/Support/ParameterValueTestCase.php';
 
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
+use Modules\Settings\Actions\ParameterValues\DeleteParameterValueAction;
 use Modules\Settings\Enums\ParameterValueStatus;
 use Modules\Settings\Models\ParameterValue;
 use Modules\Settings\Tests\Feature\ParameterValues\Support\ParameterValueTestCase;
@@ -53,6 +55,20 @@ class ParameterValueDeleteTest extends ParameterValueTestCase
     public function test_unknown_value_cannot_be_deleted(): void
     {
         $this->deleteJson($this->url().'/999999')->assertNotFound();
+    }
+
+    public function test_action_rejects_a_stale_model_that_was_already_soft_deleted(): void
+    {
+        $value = $this->createValue($this->printingLocations, 'Previously Deleted');
+
+        // Mimic a second request that already resolved this record.
+        $stale = ParameterValue::findOrFail($value->id);
+
+        $this->deleteJson($this->url($value))->assertOk();
+
+        $this->expectException(ModelNotFoundException::class);
+
+        app(DeleteParameterValueAction::class)->execute($stale);
     }
 
     public function test_already_deleted_value_cannot_be_deleted_again(): void
