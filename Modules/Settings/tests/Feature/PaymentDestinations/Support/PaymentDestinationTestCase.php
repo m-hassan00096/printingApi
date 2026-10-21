@@ -83,7 +83,7 @@ abstract class PaymentDestinationTestCase extends TestCase
         return array_replace([
             'bankName' => 'National Bank',
             'accountNumber' => '001234567890',
-            'isDefault' => false,
+            'isDefault' => 0,
             'status' => PaymentDestinationStatus::ACTIVE->value,
         ], $overrides);
     }
@@ -95,7 +95,7 @@ abstract class PaymentDestinationTestCase extends TestCase
             'phone' => '01012345678',
             'accountHolder' => 'Ahmed Ali',
             'paymentLink' => null,
-            'isDefault' => false,
+            'isDefault' => 0,
             'status' => PaymentDestinationStatus::ACTIVE->value,
         ], $overrides);
     }
