@@ -26,7 +26,7 @@ class PaymentDestinationSelectService
             ->map(static fn (BankAccount $account): array => [
                 'value' => $account->id,
                 'label' => $account->bank_name.' - '.self::maskedIdentifier($account->account_number),
-                'isDefault' => (int) $account->is_default,
+                'isDefault' => $account->is_default->value,
             ])
             ->all();
     }
@@ -48,7 +48,7 @@ class PaymentDestinationSelectService
             ->map(static fn (EWallet $wallet): array => [
                 'value' => $wallet->id,
                 'label' => $wallet->name.' - '.self::maskedIdentifier($wallet->phone),
-                'isDefault' => (int) $wallet->is_default,
+                'isDefault' => $wallet->is_default->value,
             ])
             ->all();
     }
