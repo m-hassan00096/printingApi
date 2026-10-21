@@ -37,7 +37,7 @@ class UpdateEWalletRequest extends FormRequest
             ],
             'accountHolder' => ['sometimes', 'required', 'string', 'max:150'],
             'paymentLink' => ['sometimes', 'nullable', 'string'],
-            'isDefault' => ['sometimes', 'integer', Rule::enum(DefaultStatus::class)],
+            'isDefault' => ['sometimes', 'numeric', 'integer', Rule::enum(DefaultStatus::class)],
             'status' => ['sometimes', 'required', 'integer', Rule::enum(PaymentDestinationStatus::class)],
             'account_holder' => ['prohibited'],
             'payment_link' => ['prohibited'],
