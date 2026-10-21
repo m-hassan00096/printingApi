@@ -10,22 +10,15 @@ class SettingsPermissionSeeder extends Seeder
 {
     public function run(): void
     {
-        $permissions = [
-            'settings.printing_locations.create' => 'إضافة مكان طباعة',
-            'settings.customer_types.create' => 'إضافة نوع عميل',
-        ];
+        $permission = Permission::firstOrCreate([
+            'name' => 'settings.create_parameter_value',
+            'guard_name' => 'web',
+        ]);
 
-        foreach ($permissions as $name => $alias) {
-            $permission = Permission::firstOrCreate([
-                'name' => $name,
-                'guard_name' => 'web',
-            ]);
-
-            $permission->translations()->updateOrCreate(
-                ['locale' => 'ar'],
-                ['alias' => $alias],
-            );
-        }
+        $permission->translations()->updateOrCreate(
+            ['locale' => 'ar'],
+            ['alias' => 'إضافة قيمة إعداد'],
+        );
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
