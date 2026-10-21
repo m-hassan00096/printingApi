@@ -95,6 +95,51 @@ class EWalletTest extends PaymentDestinationTestCase
         $this->assertSame('InstaPay', $wallet->name);
     }
 
+    public function test_default_flag_is_enum_in_model_and_integer_in_api(): void
+    {
+        $first = $this->createWallet();
+        $second = $this->createWallet(['phone' => '01112345678']);
+
+        $this->assertSame(DefaultStatus::DEFAULT, $first->is_default);
+        $this->assertSame(DefaultStatus::NOT_DEFAULT, $second->is_default);
+
+        $this->getJson($this->walletUrl($first->id))
+            ->assertOk()
+            ->assertJsonPath('data.isDefault', 1);
+        $this->getJson($this->walletUrl($second->id))
+            ->assertOk()
+            ->assertJsonPath('data.isDefault', 0);
+
+        $this->patchJson($this->walletUrl($second->id), ['isDefault' => 1])
+            ->assertOk()
+            ->assertJsonPath('data.isDefault', 1);
+
+        $this->assertSame(DefaultStatus::NOT_DEFAULT, $first->fresh()->is_default);
+        $this->assertSame(DefaultStatus::DEFAULT, $second->fresh()->is_default);
+    }
+
+    public function test_default_flag_rejects_boolean_and_out_of_range_values(): void
+    {
+        $wallet = $this->createWallet();
+
+        foreach ([true, false, 2, -1] as $invalid) {
+            $this->postJson($this->walletUrl(), $this->walletPayload([
+                'phone' => '01112345678',
+                'isDefault' => $invalid,
+            ]))
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('isDefault');
+
+            $this->patchJson($this->walletUrl($wallet->id), [
+                'isDefault' => $invalid,
+            ])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('isDefault');
+        }
+
+        $this->assertSame(DefaultStatus::DEFAULT, $wallet->fresh()->is_default);
+    }
+
     public function test_required_fields_and_status_are_validated(): void
     {
         $this->postJson($this->walletUrl(), [])
