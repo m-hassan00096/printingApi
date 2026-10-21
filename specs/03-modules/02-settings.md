@@ -66,7 +66,7 @@ The following rows record **owner-confirmed decisions** from the Settings discus
 | SET-001 | Four settings categories: printing locations, customer types, bank accounts and e-wallet accounts. |
 | SET-002 | `parameters` contains backend-controlled technical names; `parameter_values` stores printing locations and customer types only. |
 | SET-003 | Bank accounts and e-wallets have separate relational tables; no generic JSON attributes for these fields. |
-| SET-004 | Printing location business data is **name only**. |
+| SET-004 | Printing location data includes required **name** and optional **description**; the shared `parameter_values` fields and validation apply to printing locations and customer types. |
 | SET-005 | Each **order item** may be assigned a different printing location. Assignment happens when closing design and moving that item to printing. |
 | SET-006 | During an open printing stage, an administrator may change that item's printing location. Changes are forbidden after printing is closed. |
 | SET-007 | Do **not** retain a history of printing-location changes, prior locations or changer identities. |
@@ -104,7 +104,7 @@ The following rows record **owner-confirmed decisions** from the Settings discus
 
 | name | Managed values | Input shown to staff |
 |---|---|---|
-| `printing_locations` | `parameter_values` | Printing location name only |
+| `printing_locations` | `parameter_values` | Printing location name and optional description |
 | `customer_types` | `parameter_values` | Customer type name and optional description |
 
 - Technical group rows are inserted by an **idempotent seeder** and cannot be created, renamed or deleted through an API.
@@ -125,7 +125,7 @@ The following rows record **owner-confirmed decisions** from the Settings discus
 
 ### 5.1 Fields and management
 
-- Management input contains **`name`** and **`status`**. No user-facing `description` input for printing locations; the shared column stays `NULL` for this group.
+- Management input contains required **`name`** and **`status`**, plus optional nullable **`description`**, including when creating or editing printing locations. No group-specific prohibition applies.
 - `name` is required and unique within the group after normalized/trimmed comparison.
 - Management list supports text search, active/inactive filter, page size and sorting under the normal API standard.
 - Selected printing locations must exist, belong to `printing_locations`, be active and not be deleted for **new assignment**.
@@ -262,7 +262,7 @@ No `deleted_at` or user-managed status is required for backend-owned group defin
 | `id` | `BIGINT UNSIGNED` | PK, auto-increment. |
 | `parameter_id` | `BIGINT UNSIGNED` | Required FK to `parameters.id`, immutable after creation. |
 | `name` | `VARCHAR(150)` | Required, unique within the same group after normalization. |
-| `description` | `TEXT NULL` | Optional for customer types; `NULL` for printing locations. |
+| `description` | `TEXT NULL` | Optional for both printing locations and customer types; may be `NULL`. |
 | `status` | `TINYINT` | Required, `0` or `1`. |
 | `created_by`, `updated_by` | `BIGINT UNSIGNED NULL` | Optional FKs to `users.id`; populated with authenticated actor on model create/update; nullable for seeders/CLI. |
 | `created_at`, `updated_at` | Timestamps | Laravel timestamps. |
@@ -342,7 +342,7 @@ The generic parameter-value **Index, Show, Create, Update and Soft Delete** endp
 - Unknown `parameterId` values fail validation; no parameter-group creation or arbitrary group-name editing is exposed.
 - Create and update permissions are intentionally common to the current and future parameter groups; a user granted each permission can perform that operation for any existing group.
 - Lookup groups remain relationally distinct via `parameter_id`, and value-name uniqueness is scoped per group.
-- Printing locations accept name and status only: Store/Update FormRequests reject nonempty `description` for the `printing_locations` group. Customer types continue to accept an optional description; this distinction has dedicated tests.
+- Both printing locations and customer types accept optional nullable `description` in Store/Update requests; the printing-location create/update tests confirm this behavior.
 - The index **requires** `parameterId` (exists in `parameters.id`); it supports `filter[search]` (searches `name` and `description` **only**), `filter[status]` (integer `0` or `1`), `page`, `perPage` (1–100, default 15), and `sort` (allowlist: `id`, `name`, `created_at`; default `-id`). The filter syntax follows Spatie QueryBuilder and the Identity users API. Other filters are rejected.
 - The collection uses `data.parameters` and `data.pagination` (`currentPage`, `lastPage`, `perPage`, `total`), and excludes soft-deleted rows by default. Show uses ParameterValueResource and does not require a `parameterId` query parameter.
 - Delete returns the normal `ApiResponse::success()` response (`200`, `data: null`), never hard-deletes, and permanently reserves the deleted name within its group. The prior section-specific create routes are **not** part of the API.
