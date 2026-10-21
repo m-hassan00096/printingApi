@@ -2,6 +2,7 @@
 
 namespace Modules\Settings\Actions\BankAccounts;
 
+use Modules\Settings\Enums\DefaultStatus;
 use Modules\Settings\Models\BankAccount;
 use Modules\Settings\Services\PaymentDestinationDefaultService;
 
@@ -21,7 +22,7 @@ class UpdateBankAccountAction
             $bankAccount,
             'bank_accounts',
             $attributes,
-            array_key_exists('isDefault', $data) ? (bool) $data['isDefault'] : null,
+            array_key_exists('isDefault', $data) ? DefaultStatus::from((int) $data['isDefault']) : null,
         );
     }
 }
