@@ -65,7 +65,7 @@ class PaymentDestinationSelectServicesTest extends PaymentDestinationTestCase
         $active = BankAccount::create([
             'bank_name' => 'Active Bank',
             'account_number' => '0000001234',
-            'is_default' => true,
+            'is_default' => 1,
             'status' => 1,
         ]);
         BankAccount::create([
@@ -92,7 +92,7 @@ class PaymentDestinationSelectServicesTest extends PaymentDestinationTestCase
             'phone' => '01012345678',
             'account_holder' => 'Someone',
             'status' => 1,
-            'is_default' => true,
+            'is_default' => 1,
         ]);
         EWallet::create([
             'name' => 'Inactive Wallet',
@@ -119,7 +119,7 @@ class PaymentDestinationSelectServicesTest extends PaymentDestinationTestCase
             'bank_name' => 'Short Bank',
             'account_number' => '123',
             'status' => 1,
-            'is_default' => true,
+            'is_default' => 1,
         ]);
 
         $this->assertSame([
@@ -139,14 +139,14 @@ class PaymentDestinationSelectServicesTest extends PaymentDestinationTestCase
             'bank_name' => 'Bank A',
             'account_number' => '1234567',
             'status' => 1,
-            'is_default' => true,
+            'is_default' => 1,
         ]);
         $wallet = EWallet::create([
             'name' => 'Wallet A',
             'phone' => '01012345678',
             'account_holder' => 'A',
             'status' => 1,
-            'is_default' => true,
+            'is_default' => 1,
         ]);
 
         $service = app(PaymentDestinationSelectService::class);
