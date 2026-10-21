@@ -14,6 +14,7 @@ class SettingsPermissionSeeder extends Seeder
             'settings.view_parameter_values' => 'عرض قيم الإعدادات',
             'settings.create_parameter_value' => 'إضافة قيمة إعداد',
             'settings.update_parameter_value' => 'تعديل قيمة إعداد',
+            'settings.delete_parameter_value' => 'حذف قيمة إعداد',
         ];
 
         foreach ($permissions as $name => $alias) {
