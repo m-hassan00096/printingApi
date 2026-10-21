@@ -2,6 +2,7 @@
 
 namespace Modules\Settings\Actions\BankAccounts;
 
+use Modules\Settings\Enums\DefaultStatus;
 use Modules\Settings\Models\BankAccount;
 use Modules\Settings\Services\PaymentDestinationDefaultService;
 
@@ -17,7 +18,7 @@ class CreateBankAccountAction
                 'account_number' => $data['accountNumber'],
                 'status' => $data['status'],
             ],
-            (bool) ($data['isDefault'] ?? false),
+            DefaultStatus::from((int) ($data['isDefault'] ?? DefaultStatus::NOT_DEFAULT->value)),
         );
     }
 }
