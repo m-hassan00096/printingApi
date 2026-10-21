@@ -613,7 +613,7 @@ These questions are **not authorization to implement guessed behavior**. They re
 | SET-OPEN-08 | Final REST update method (`PUT` versus `PATCH`) and exact CRUD permission name notation to match current repository conventions. | Use the established current module conventions, not older sample documents. |
 | SET-OPEN-09 | If a printing location is made inactive while assigned to an item in an **open printing stage**, whether to allow completion without reassignment. | Preserve the existing assignment to avoid blocking work; new selections must require active locations. This is ultimately a Production workflow decision. |
 
-Until the remaining decisions are approved, related future-module tests and indexes are preliminary. The parameter-values unique index and soft-deleted-name reservation are approved under SET-031; the bank/wallet soft-delete uniqueness policy, replacement-default priority and financial Selects label format remain open. The provisional implementation behavior above is not final owner approval.
+Until the remaining decisions are approved, related future-module tests and indexes are preliminary. The parameter-values unique index and soft-deleted-name reservation are approved under SET-031. The bank/wallet soft-delete uniqueness policy and replacement-default priority remain open. The payment-destination Selects currently use masked-last-four labels with numeric isDefault (0/1); the exact label presentation can be refined without changing the approved masking requirement.
 
 ## 19. Testing and acceptance criteria
 
