@@ -116,6 +116,12 @@ abstract class PaymentDestinationTestCase extends TestCase
 
     protected function loginAs(User $user): void
     {
+        // A prior authenticated request stores password_hash_web in the session.
+        // Switching from the admin to a staff user without clearing that session
+        // makes Sanctum's AuthenticateSession log out the new user (401 instead
+        // of the expected permission-based 403).
+        $this->flushSession();
+
         $this->actingAs($user, 'web');
         Auth::guard('sanctum')->forgetUser();
     }
