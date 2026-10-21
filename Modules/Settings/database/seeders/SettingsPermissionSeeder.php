@@ -16,6 +16,14 @@ class SettingsPermissionSeeder extends Seeder
             'settings.create_parameter_value' => 'إضافة قيمة إعداد',
             'settings.update_parameter_value' => 'تعديل قيمة إعداد',
             'settings.delete_parameter_value' => 'حذف قيمة إعداد',
+            'settings.bank_accounts.view' => 'عرض الحسابات البنكية',
+            'settings.bank_accounts.create' => 'إضافة حساب بنكي',
+            'settings.bank_accounts.update' => 'تعديل حساب بنكي',
+            'settings.bank_accounts.delete' => 'حذف حساب بنكي',
+            'settings.e_wallets.view' => 'عرض المحافظ الإلكترونية',
+            'settings.e_wallets.create' => 'إضافة محفظة إلكترونية',
+            'settings.e_wallets.update' => 'تعديل محفظة إلكترونية',
+            'settings.e_wallets.delete' => 'حذف محفظة إلكترونية',
         ];
 
         foreach ($permissions as $name => $alias) {
