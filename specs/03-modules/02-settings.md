@@ -319,14 +319,16 @@ e_wallets (id) ────> Finance receipt / advance payment reference + snaps
 
 ## 12. API contract — proposed endpoints for approval
 
-All routes are relative to `/api/v1`. Body fields use `camelCase`; database columns remain `snake_case`. Successful GET responses use the existing shared `{ "success": true, "message": "", "data": ... }` envelope, and management lists use the approved `data.items` / `data.pagination` structure. The project currently uses `auth:sanctum` and Spatie role/permission enforcement.
+All routes are relative to `/api/v1`. Body fields use `camelCase`; database columns remain `snake_case`. Successful GET responses use the shared `{ "success": true, "message": "", "data": ... }` envelope. The implemented parameter-values index mirrors the Identity `UserCollection` structure, returning `data.parameters` and `data.pagination`; other proposed Settings management lists may use `data.items`. Routes use `auth:sanctum` and Spatie permissions.
 
-The shared `POST /settings/parameter-values` create and `PUT`/`PATCH /settings/parameter-values/{parameterValue}` update contracts and their separate permissions are approved. Other management routes remain proposed until their respective features are implemented. The implementation does not expose public CRUD for `parameters` technical groups.
+The generic parameter-value **Index, Show, Create and Update** endpoints below are implemented, each protected by the relevant shared permission. Delete and bank/wallet management routes remain proposed until implemented. No public CRUD for `parameters` technical groups is exposed.
 
-### 12.1 Parameter values — generic create and update (approved)
+### 12.1 Parameter values — generic index, show, create and update (implemented)
 
 | Method | Path | Required permission | Behavior |
 |---|---|---|---|
+| `GET` | `/settings/parameter-values?parameterId={id}` | `settings.view_parameter_values` | Paginate non-deleted values within the required existing group ID. |
+| `GET` | `/settings/parameter-values/{parameterValue}` | `settings.view_parameter_values` | Show a non-deleted value by ID. |
 | `POST` | `/settings/parameter-values` | `settings.create_parameter_value` | Create a value within an existing `parameters.id` group, using the shared CreateParameterValueAction. |
 | `PUT` / `PATCH` | `/settings/parameter-values/{parameterValue}` | `settings.update_parameter_value` | Update a non-deleted value with UpdateParameterValueAction; its `parameter_id` cannot change. |
 
@@ -335,7 +337,9 @@ The shared `POST /settings/parameter-values` create and `PUT`/`PATCH /settings/p
 - Create and update permissions are intentionally common to the current and future parameter groups; a user granted each permission can perform that operation for any existing group.
 - Lookup groups remain relationally distinct via `parameter_id`, and value-name uniqueness is scoped per group.
 - Existing business-specific rules continue to apply, including the current requirement that printing locations have only a user-facing name and status; implementation of that group-specific description restriction should be checked in tests before production use.
-- List/detail/delete routes for parameter values will be decided when those endpoints are implemented; the prior section-specific create routes are **not** part of the API.
+- The index **requires** `parameterId` (exists in `parameters.id`); it supports `filter[search]` (searches `name` and `description` **only**), `filter[status]` (integer `0` or `1`), `page`, `perPage` (1–100, default 15), and `sort` (allowlist: `id`, `name`, `created_at`; default `-id`). The filter syntax follows Spatie QueryBuilder and the Identity users API. Other filters are rejected.
+- The collection uses `data.parameters` and `data.pagination` (`currentPage`, `lastPage`, `perPage`, `total`), and excludes soft-deleted rows by default. Show uses ParameterValueResource and does not require a `parameterId` query parameter.
+- Delete remains unimplemented; the prior section-specific create routes are **not** part of the API.
 - Input validation (required fields, enum status, trimmed names and group-scoped uniqueness) belongs to StoreParameterValueRequest and UpdateParameterValueRequest, not duplicated in Actions. The update Action handles the transactional row-locked write; the create Action writes through the Parameter relationship.
 
 ### 12.2 Bank accounts and e-wallets — proposed routes
@@ -431,14 +435,14 @@ POST /api/v1/settings/parameter-values
 
 `paymentLink` is optional plain text and may be null. Because these are sample payloads, bank numbers/phone numbers shown are illustrative, **not seed data**.
 
-### 13.5 Paginated management list
+### 13.5 Paginated parameter values list
 
 ```json
 {
   "success": true,
   "message": "",
   "data": {
-    "items": [
+    "parameters": [
       {
         "id": 7,
         "name": "مطبعة النور",
@@ -536,6 +540,7 @@ The following **proposed technical permissions** are owned by Settings and seede
 
 | Permission | Meaning |
 |---|---|
+| `settings.view_parameter_values` | **Implemented read permission:** index/show parameter values through the shared API. |
 | `settings.create_parameter_value` | **Implemented create permission:** add values to any existing parameter group through the shared API. |
 | `settings.update_parameter_value` | **Implemented update permission:** edit values of any existing parameter group through the shared API. |
 | `settings.printing_locations.view` | Proposed: view printing locations in management APIs. |
@@ -554,7 +559,7 @@ The following **proposed technical permissions** are owned by Settings and seede
 | `settings.e_wallets.delete` | Soft-delete eligible e-wallets. |
 | `settings.selects.view` | Read active options from all four Settings groups through shared selects. **Owner-approved literal key.** |
 
-- The lookup create/update APIs and literal permissions `settings.create_parameter_value` and `settings.update_parameter_value` are approved and implemented. Other lookup read/delete permissions and bank/wallet CRUD permission names remain proposals until implementation. `settings.selects.view` remains the shared selects permission.
+- The generic parameter-value Index/Show/Create/Update APIs with `settings.view_parameter_values`, `settings.create_parameter_value`, and `settings.update_parameter_value` are implemented. Other lookup delete and bank/wallet CRUD permissions are proposals until implementation. `settings.selects.view` remains the shared selects permission.
 - Neither `admin` role name nor frontend visibility alone grants permission to perform an operation.
 - A separate **Production-owned** permission governs administrator-only changes to an in-progress item's printing location; Settings `.update` is insufficient for changing production assignments.
 - Use parameterized/allowlisted filtering, safe database writes, CSRF-protected stateful API access and standard anti-leak handling. Payment destination account identifiers are not secret API keys but still must not be exposed to users without appropriate management authorization.
@@ -617,7 +622,7 @@ Feature specifications derived from this reference must be able to demonstrate t
 
 18. All four management lists support search, status filtering and pagination; inactive rows remain visible in management views.
 19. Soft deletion fails for ever-used records; soft-deleted rows disappear from normal selects and lists. Restoration is not exposed.
-20. Shared `settings.create_parameter_value` and `settings.update_parameter_value` permissions independently authorize creation and update through generic endpoints; other management permissions enforce their applicable reads/writes when implemented.
+20. Shared `settings.view_parameter_values`, `settings.create_parameter_value`, and `settings.update_parameter_value` permissions independently authorize read, create, and update through generic endpoints; other management permissions enforce their applicable reads/writes when implemented.
 21. `settings.selects.view` alone enables the four active Settings option sources but does not grant full management view or write access.
 22. The shared aggregator rejects unknown keys with `422` and unauthorized requested keys with `403`; no partial leakage.
 23. GET success and all errors use the current project response conventions; validation errors keep public `camelCase` field names.
