@@ -32,14 +32,22 @@ class PaymentDestinationDefaultService
     public function create(string $modelClass, string $table, array $attributes, bool $wantsDefault): Model
     {
         return $this->synchronized($table, function () use ($modelClass, $attributes, $wantsDefault): Model {
-            $attributes['is_default'] = false;
-            $record = $modelClass::query()->create($attributes);
+            $shouldBeDefault = (int) $attributes['status'] === PaymentDestinationStatus::ACTIVE->value
+                && ($wantsDefault || ! $this->hasEligibleDefault($modelClass));
 
-            if ($this->isActive($record) && ($wantsDefault || ! $this->hasEligibleDefault($modelClass))) {
-                $this->promote($modelClass, $record);
+            if ($shouldBeDefault) {
+                // Demote an old default before inserting the new one.
+                foreach ($modelClass::query()->where('is_default', true)->get() as $current) {
+                    $current->is_default = false;
+                    $current->save();
+                }
             }
 
-            return $record->refresh();
+            // Set the final default value on INSERT: do not create an artificial
+            // updated_by audit entry when the first active account is created.
+            $attributes['is_default'] = $shouldBeDefault;
+
+            return $modelClass::query()->create($attributes);
         });
     }
 
