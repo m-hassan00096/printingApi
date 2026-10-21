@@ -4,6 +4,7 @@ namespace Modules\Settings\Http\Requests\BankAccounts;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Modules\Settings\Enums\DefaultStatus;
 use Modules\Settings\Enums\PaymentDestinationStatus;
 use Modules\Settings\Models\BankAccount;
 
@@ -34,7 +35,7 @@ class UpdateBankAccountRequest extends FormRequest
                 'sometimes', 'required', 'string', 'max:50',
                 Rule::unique('bank_accounts', 'account_number')->ignore($bankAccount),
             ],
-            'isDefault' => ['sometimes', 'boolean'],
+            'isDefault' => ['sometimes', 'integer', Rule::enum(DefaultStatus::class)],
             'status' => ['sometimes', 'required', 'integer', Rule::enum(PaymentDestinationStatus::class)],
             'bank_name' => ['prohibited'],
             'account_number' => ['prohibited'],
