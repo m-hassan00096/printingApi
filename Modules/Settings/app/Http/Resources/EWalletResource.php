@@ -15,7 +15,7 @@ class EWalletResource extends JsonResource
             'phone' => $this->phone,
             'accountHolder' => $this->account_holder,
             'paymentLink' => $this->payment_link,
-            'isDefault' => $this->is_default,
+            'isDefault' => $this->is_default->value,
             'status' => $this->status->value,
         ];
     }
