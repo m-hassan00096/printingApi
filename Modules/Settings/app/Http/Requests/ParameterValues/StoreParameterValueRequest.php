@@ -16,9 +16,15 @@ class StoreParameterValueRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'parameterId' => ['required', 'integer', Rule::exists('parameters', 'id')],
+            // The group is selected by the server-side route, not by request data.
+            'parameterId' => ['prohibited'],
+            'parameter_id' => ['prohibited'],
             'name' => ['required', 'string', 'max:150'],
-            'description' => ['nullable', 'string'],
+            'description' => [
+                'nullable',
+                'string',
+                Rule::prohibitedIf($this->route('parameterName') === 'printing_locations'),
+            ],
             'status' => ['required', 'integer', Rule::enum(ParameterValueStatus::class)],
         ];
     }
