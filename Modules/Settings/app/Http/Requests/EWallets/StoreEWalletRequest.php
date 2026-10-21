@@ -4,6 +4,7 @@ namespace Modules\Settings\Http\Requests\EWallets;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use Modules\Settings\Enums\DefaultStatus;
 use Modules\Settings\Enums\PaymentDestinationStatus;
 
 class StoreEWalletRequest extends FormRequest
@@ -32,7 +33,7 @@ class StoreEWalletRequest extends FormRequest
             ],
             'accountHolder' => ['required', 'string', 'max:150'],
             'paymentLink' => ['nullable', 'string'],
-            'isDefault' => ['sometimes', 'boolean'],
+            'isDefault' => ['sometimes', 'integer', Rule::enum(DefaultStatus::class)],
             'status' => ['required', 'integer', Rule::enum(PaymentDestinationStatus::class)],
             'account_holder' => ['prohibited'],
             'payment_link' => ['prohibited'],
