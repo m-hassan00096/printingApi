@@ -5,6 +5,7 @@ namespace Modules\Settings\Http\Requests\ParameterValues;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Modules\Settings\Enums\ParameterValueStatus;
+use Modules\Settings\Models\Parameter;
 
 class StoreParameterValueRequest extends FormRequest
 {
@@ -24,6 +25,11 @@ class StoreParameterValueRequest extends FormRequest
 
     public function rules(): array
     {
+        $isPrintingLocation = Parameter::query()
+            ->whereKey($this->integer('parameterId'))
+            ->where('name', 'printing_locations')
+            ->exists();
+
         return [
             'parameterId' => [
                 'required',
@@ -38,7 +44,7 @@ class StoreParameterValueRequest extends FormRequest
                 Rule::unique('parameter_values', 'name')
                     ->where('parameter_id', $this->input('parameterId')),
             ],
-            'description' => ['nullable', 'string'],
+            'description' => ['nullable', 'string', Rule::prohibitedIf($isPrintingLocation)],
             'status' => [
                 'required',
                 'integer',
