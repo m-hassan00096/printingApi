@@ -50,6 +50,12 @@ abstract class ParameterValueTestCase extends TestCase
             'status' => RoleStatus::ACTIVE,
         ]);
 
+        // Read uses the plural key; write operations use singular keys.
+        $adminRole->givePermissionTo(Permission::findOrCreate(
+            'settings.view_parameter_values',
+            'web',
+        ));
+
         foreach (['create', 'update'] as $operation) {
             $permission = Permission::findOrCreate(
                 'settings.'.$operation.'_parameter_value',
