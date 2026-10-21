@@ -8,4 +8,7 @@ Route::middleware('auth:sanctum')
     ->group(function (): void {
         Route::post('parameter-values', [ParameterValueController::class, 'store'])
             ->middleware('permission:settings.create_parameter_value');
+
+        Route::match(['put', 'patch'], 'parameter-values/{parameterValue}', [ParameterValueController::class, 'update'])
+            ->middleware('permission:settings.update_parameter_value');
     });
