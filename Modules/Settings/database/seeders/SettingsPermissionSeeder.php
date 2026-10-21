@@ -11,6 +11,7 @@ class SettingsPermissionSeeder extends Seeder
     public function run(): void
     {
         $permissions = [
+            'settings.view_parameter_values' => 'عرض قيم الإعدادات',
             'settings.create_parameter_value' => 'إضافة قيمة إعداد',
             'settings.update_parameter_value' => 'تعديل قيمة إعداد',
         ];
