@@ -4,6 +4,7 @@ namespace Modules\Settings\Services;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Modules\Settings\Enums\DefaultStatus;
 use Modules\Settings\Enums\PaymentDestinationStatus;
 
 class PaymentDestinationDefaultService
@@ -29,23 +30,23 @@ class PaymentDestinationDefaultService
      * @param class-string<Model> $modelClass
      * @param array<string, mixed> $attributes
      */
-    public function create(string $modelClass, string $table, array $attributes, bool $wantsDefault): Model
+    public function create(string $modelClass, string $table, array $attributes, DefaultStatus $wantsDefault): Model
     {
         return $this->synchronized($table, function () use ($modelClass, $attributes, $wantsDefault): Model {
             $shouldBeDefault = (int) $attributes['status'] === PaymentDestinationStatus::ACTIVE->value
-                && ($wantsDefault || ! $this->hasEligibleDefault($modelClass));
+                && ($wantsDefault === DefaultStatus::DEFAULT || ! $this->hasEligibleDefault($modelClass));
 
             if ($shouldBeDefault) {
                 // Demote an old default before inserting the new one.
-                foreach ($modelClass::query()->where('is_default', true)->get() as $current) {
-                    $current->is_default = false;
+                foreach ($modelClass::query()->where('is_default', DefaultStatus::DEFAULT->value)->get() as $current) {
+                    $current->is_default = DefaultStatus::NOT_DEFAULT;
                     $current->save();
                 }
             }
 
             // Set the final default value on INSERT: do not create an artificial
             // updated_by audit entry when the first active account is created.
-            $attributes['is_default'] = $shouldBeDefault;
+            $attributes['is_default'] = $shouldBeDefault ? DefaultStatus::DEFAULT : DefaultStatus::NOT_DEFAULT;
 
             return $modelClass::query()->create($attributes);
         });
@@ -54,7 +55,7 @@ class PaymentDestinationDefaultService
     /**
      * @param array<string, mixed> $attributes
      */
-    public function update(Model $model, string $table, array $attributes, ?bool $wantsDefault): Model
+    public function update(Model $model, string $table, array $attributes, ?DefaultStatus $wantsDefault): Model
     {
         $modelClass = $model::class;
 
@@ -64,17 +65,19 @@ class PaymentDestinationDefaultService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $wasDefault = (bool) $record->is_default;
+            $wasDefault = $record->is_default === DefaultStatus::DEFAULT;
             $record->fill($attributes);
-            $record->is_default = $wasDefault && $this->isActive($record);
+            $record->is_default = $wasDefault && $this->isActive($record)
+                ? DefaultStatus::DEFAULT
+                : DefaultStatus::NOT_DEFAULT;
 
-            if ($wantsDefault === false && $wasDefault) {
-                $record->is_default = false;
+            if ($wantsDefault === DefaultStatus::NOT_DEFAULT && $wasDefault) {
+                $record->is_default = DefaultStatus::NOT_DEFAULT;
             }
 
             $record->save();
 
-            if ($this->isActive($record) && $wantsDefault === true) {
+            if ($this->isActive($record) && $wantsDefault === DefaultStatus::DEFAULT) {
                 $this->promote($modelClass, $record);
             } elseif (! $this->hasEligibleDefault($modelClass)) {
                 $this->promoteOldestActive($modelClass);
@@ -96,8 +99,8 @@ class PaymentDestinationDefaultService
 
             // The owning Finance module must add historic-reference restrictions
             // before accounts used by receipts or advances can be deleted.
-            if ($record->is_default) {
-                $record->is_default = false;
+            if ($record->is_default === DefaultStatus::DEFAULT) {
+                $record->is_default = DefaultStatus::NOT_DEFAULT;
                 $record->save();
             }
 
@@ -114,7 +117,7 @@ class PaymentDestinationDefaultService
     {
         return $modelClass::query()
             ->where('status', PaymentDestinationStatus::ACTIVE->value)
-            ->where('is_default', true)
+            ->where('is_default', DefaultStatus::DEFAULT->value)
             ->exists();
     }
 
@@ -136,17 +139,17 @@ class PaymentDestinationDefaultService
     private function promote(string $modelClass, Model $selected): void
     {
         $existing = $modelClass::query()
-            ->where('is_default', true)
+            ->where('is_default', DefaultStatus::DEFAULT->value)
             ->whereKeyNot($selected->getKey())
             ->get();
 
         foreach ($existing as $record) {
-            $record->is_default = false;
+            $record->is_default = DefaultStatus::NOT_DEFAULT;
             $record->save();
         }
 
-        if (! $selected->is_default) {
-            $selected->is_default = true;
+        if ($selected->is_default !== DefaultStatus::DEFAULT) {
+            $selected->is_default = DefaultStatus::DEFAULT;
             $selected->save();
         }
     }
