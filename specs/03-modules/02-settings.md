@@ -212,7 +212,8 @@ Bank account defaults and wallet defaults form **independent sets**. Both sets n
 5. When the current default is disabled and other active records are available, another active record becomes default automatically. If no active candidate exists, **no default** is valid.
 6. The user has not chosen the **selection priority** when there are multiple candidates (§18). A deterministic oldest-ID rule is proposed but not yet approved.
 7. Concurrent administrative requests must not leave two defaults in one group. Enforce through a safe database transaction/serialization approach, with an appropriate DB-level uniqueness design where feasible; do not rely only on a UI toggle or simple pre-save counting query.
-8. Defaults are **convenience suggestions** for Finance UI/flows, not evidence of a payment or authorization to post money.
+8. If a user explicitly submits `isDefault: 0` on the currently selected default, the fallback calculation **may select that same record again** when it is the oldest eligible active record. This behavior is permitted; do not force a different default in that case.
+9. Defaults are **convenience suggestions** for Finance UI/flows, not evidence of a payment or authorization to post money.
 
 ## 10. Delete, deactivate, uniqueness and history boundaries
 
@@ -230,7 +231,7 @@ Bank account defaults and wallet defaults form **independent sets**. Both sets n
 - `DELETE` is permitted only for records **never referenced** by a relevant Customer, Production, receipt or advance-payment operation; otherwise the API returns a business conflict and recommends deactivation when applicable.
 - Do not physically delete historical records or cascade-delete related customers, items, or receipts.
 - No restore endpoint in v1. Deleted records are not included in normal management lists or selects.
-- Whether unique names/account numbers/phone numbers stay **reserved even after Soft Delete** is deliberately **not yet approved** (§18). The chosen behavior must be enforced coherently by the DB indexes and application validation.
+- `parameter_values` names remain reserved after Soft Delete within their group (approved SET-031). Bank-account numbers and wallet phones are also currently reserved by database unique indexes but **that policy is provisional** and pending owner approval (SET-OPEN-01).
 
 ### 10.3 Historical snapshots
 
@@ -325,7 +326,7 @@ e_wallets (id) ────> Finance receipt / advance payment reference + snaps
 
 All routes are relative to `/api/v1`. Body fields use `camelCase`; database columns remain `snake_case`. Successful GET responses use the shared `{ "success": true, "message": "", "data": ... }` envelope. The implemented parameter-values index mirrors the Identity `UserCollection` structure, returning `data.parameters` and `data.pagination`; other proposed Settings management lists may use `data.items`. Routes use `auth:sanctum` and Spatie permissions.
 
-The generic parameter-value **Index, Show, Create, Update and Soft Delete** endpoints below are implemented, each protected by the relevant shared permission. Bank/wallet management routes remain proposed until implemented. No public CRUD for `parameters` technical groups is exposed.
+The generic parameter-value **Index, Show, Create, Update and Soft Delete** endpoints and the separate bank/wallet CRUD routes below are implemented, each protected by the relevant shared permission. No public CRUD for `parameters` technical groups is exposed.
 
 ### 12.1 Parameter values — generic index, show, create, update and delete (implemented)
 
@@ -341,7 +342,7 @@ The generic parameter-value **Index, Show, Create, Update and Soft Delete** endp
 - Unknown `parameterId` values fail validation; no parameter-group creation or arbitrary group-name editing is exposed.
 - Create and update permissions are intentionally common to the current and future parameter groups; a user granted each permission can perform that operation for any existing group.
 - Lookup groups remain relationally distinct via `parameter_id`, and value-name uniqueness is scoped per group.
-- Existing business-specific rules continue to apply, including the current requirement that printing locations have only a user-facing name and status; implementation of that group-specific description restriction should be checked in tests before production use.
+- Printing locations accept name and status only: Store/Update FormRequests reject nonempty `description` for the `printing_locations` group. Customer types continue to accept an optional description; this distinction has dedicated tests.
 - The index **requires** `parameterId` (exists in `parameters.id`); it supports `filter[search]` (searches `name` and `description` **only**), `filter[status]` (integer `0` or `1`), `page`, `perPage` (1–100, default 15), and `sort` (allowlist: `id`, `name`, `created_at`; default `-id`). The filter syntax follows Spatie QueryBuilder and the Identity users API. Other filters are rejected.
 - The collection uses `data.parameters` and `data.pagination` (`currentPage`, `lastPage`, `perPage`, `total`), and excludes soft-deleted rows by default. Show uses ParameterValueResource and does not require a `parameterId` query parameter.
 - Delete returns the normal `ApiResponse::success()` response (`200`, `data: null`), never hard-deletes, and permanently reserves the deleted name within its group. The prior section-specific create routes are **not** part of the API.
@@ -595,7 +596,7 @@ The following **proposed technical permissions** are owned by Settings and seede
 - Seed illustrative, editable `parameter_values` (e.g., customer types `عميل عادي`, `شركة`, `جملة` and location `مطبعة رئيسية`). These are **examples approved to be chosen by implementation**, not verified real business places.
 - Re-running seeders must not silently undo user edits, reactivate disabled rows, restore soft-deleted values or create duplicates.
 - Bank accounts and e-wallets are **empty after fresh installation** until authorized users enter real details.
-- Seed required Settings technical permissions idempotently with appropriate Arabic display labels. Do not silently overwrite customized role assignments in an existing installation.
+- Seed required Settings technical permissions idempotently with appropriate Arabic display labels. Do not silently overwrite customized role assignments in an existing installation. `SettingsDatabaseSeeder` runs the technical-group and permission seeders without creating bank accounts or wallets.
 - Setup must allow zero bank accounts, zero wallets and therefore no default payment account while Finance is not configured.
 
 ## 18. Open decisions requiring final owner approval
@@ -605,7 +606,7 @@ These questions are **not authorization to implement guessed behavior**. They re
 | ID | Open decision | Suggested default for discussion |
 |---|---|---|
 | SET-OPEN-01 | After a never-used **bank account or e-wallet** is soft-deleted, can its unique account number / phone be reused? | **Still pending.** Implementation temporarily retains deleted numbers in unique indexes. The owner must confirm before the behavior is treated as final. Parameter-value names are permanently reserved under SET-031. |
-| SET-OPEN-02 | When a disabled default has multiple eligible replacement accounts, which becomes default? | **Still pending.** Implementation currently selects oldest active (`id ASC`) as an explicitly provisional deterministic fallback, not an owner-approved priority. |
+| SET-OPEN-02 | When a disabled default has multiple eligible replacement accounts, which becomes default? | **Still pending.** Implementation currently selects oldest active (`id ASC`) as a provisional deterministic fallback. When `isDefault: 0` is submitted for the current default, that same active account **may be selected again** under this rule; the owner explicitly permits this behavior. |
 | SET-OPEN-03 | When the printing location's display name changes during active printing, should the final item snapshot reflect the name at printing **start** or **stage close**? | Capture/finalize at **stage close**, consistent with “final location”; pending approval. |
 | SET-OPEN-04 | Confirm existing orders (even not-yet-designed orders) always retain their originally stored price if customer type changes. | **Yes**, based on the latest discussion; earlier statement mentioned automatic repricing, so this needs explicit confirmation for the Services/Orders references. |
 | SET-OPEN-05 | Define historic usage checks precisely: references from current or soft-deleted customers/items, canceled receipts, reversed/deleted financial records, etc. | Preserve deletion restrictions whenever historic association exists; settle final scope with owning modules. |
