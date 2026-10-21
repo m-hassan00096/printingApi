@@ -466,48 +466,48 @@ Standard query input follows existing project `page`, `perPage`, permitted filte
 
 ## 14. Shared Selects integration
 
-Settings provides **four allowlisted option keys** to the existing shared `GET /api/v1/selects` service:
+Settings registers two **implemented** option keys in the existing shared `GET /api/v1/selects` aggregator. No new endpoint or general-purpose CRUD on `parameters` is exposed:
 
 ```http
-GET /api/v1/selects?selects=printingLocations,customerTypes,bankAccounts,eWallets
+GET /api/v1/selects?selects=printingLocations,customerTypes
 ```
 
-| Proposed key | Value | Label | Eligibility | Permission |
-|---|---|---|---|---|
-| `printingLocations` | `parameter_values.id` | printing location name | active + not soft-deleted, correct group | `settings.selects.view` |
-| `customerTypes` | `parameter_values.id` | customer type name | active + not soft-deleted, correct group | `settings.selects.view` |
-| `bankAccounts` | `bank_accounts.id` | bank name plus short account identifier **(label format open)** | active + not soft-deleted | `settings.selects.view` |
-| `eWallets` | `e_wallets.id` | wallet name plus short phone identifier **(label format open)** | active + not soft-deleted | `settings.selects.view` |
+| Select key | Value | Label | Eligibility | Permission | State |
+|---|---|---|---|---|---|
+| `printingLocations` | `parameter_values.id` | Printing location name | Active + not soft-deleted + `printing_locations` group | `settings.selects.view` | **Implemented** |
+| `customerTypes` | `parameter_values.id` | Customer type name | Active + not soft-deleted + `customer_types` group | `settings.selects.view` | **Implemented** |
+| `bankAccounts` | `bank_accounts.id` | Bank name and safe shortened identifier (format undecided) | Active + not soft-deleted | `settings.selects.view` | **Proposed, not registered** |
+| `eWallets` | `e_wallets.id` | Wallet name and safe shortened phone (format undecided) | Active + not soft-deleted | `settings.selects.view` | **Proposed, not registered** |
 
-Example shape (exact label formatting for payment destinations awaits approval):
+The existing aggregator returns an **ordered array** of `{ "label": key, "options": [...] }`, not an object indexed by select key. Example response (IDs illustrative):
 
 ```json
 {
   "success": true,
   "message": "",
-  "data": {
-    "printingLocations": [
-      { "value": 7, "label": "مطبعة النور" }
-    ],
-    "customerTypes": [
-      { "value": 3, "label": "شركة" }
-    ],
-    "bankAccounts": [
-      { "value": 5, "label": "البنك الأهلي المصري" }
-    ],
-    "eWallets": [
-      { "value": 8, "label": "Vodafone Cash" }
-    ]
-  }
+  "data": [
+    {
+      "label": "printingLocations",
+      "options": [
+        { "value": 7, "label": "مطبعة النور" }
+      ]
+    },
+    {
+      "label": "customerTypes",
+      "options": [
+        { "value": 3, "label": "شركة" }
+      ]
+    }
+  ]
 }
 ```
 
-- A caller with `settings.selects.view` may request **all four** Settings keys regardless of management view permissions.
-- Management `.view` permission by itself does not implicitly grant selects permission unless the assigned role has both.
-- Selects contain only `value` and `label`; **do not expose full bank numbers, phone numbers or payment links in selects** solely because the common selects permission exists. The management/detail `.view` APIs return the approved full fields.
-- Invalid/unknown keys return `422`; unauthorized requested keys return `403` without leaking options, according to the existing aggregator contract.
-- Existing historical form choices may be shown from the underlying operation snapshot/read model even when a record is now inactive; it is **not** a newly selectable active option.
-- Exact select key casing/names are **proposed** and must align with the real aggregator registry before implementation. The historical Identity reference describes some old select payload details that may differ from the now-tested Identity APIs; use the verified current code as the source of truth for implementation.
+- `SettingsSelectServiceProvider` registers the two keys through the shared `SelectRegistry`; `ParameterValueSelectService` reads values by backend-controlled group name, filters for `ParameterValueStatus::ACTIVE`, excludes soft-deleted rows using the Eloquent scope, and sorts by `name` then `id`.
+- The optional provider parameter `params[printingLocations]=active` or `params[customerTypes]=active` is accepted. Other values (including `all` or `inactive`) return `422`, matching the existing active-only Identity select convention.
+- `settings.selects.view` is seeded as a permission definition. It authorizes **both implemented** Settings keys and does not grant the parameter-values management APIs. Conversely, management `settings.view_parameter_values` does not authorize selects.
+- A mixed request can include Identity select keys when the caller has each corresponding Identity permission. Unknown/unregistered keys return `422`; unauthorized keys return `403` with no partial options response.
+- Select options expose only `value` and `label`; future bank/wallet selects must not disclose full account numbers, wallet phones or payment links solely due to the shared selects permission.
+- Historical selections can be rendered by an owning module's saved value/snapshot even when that option is now inactive, but inactive or soft-deleted records are never returned as newly selectable options.
 
 ## 15. Validation, authorization and failure semantics
 
@@ -561,9 +561,9 @@ The following **proposed technical permissions** are owned by Settings and seede
 | `settings.e_wallets.create` | Create e-wallets. |
 | `settings.e_wallets.update` | Update wallet fields/default/status. |
 | `settings.e_wallets.delete` | Soft-delete eligible e-wallets. |
-| `settings.selects.view` | Read active options from all four Settings groups through shared selects. **Owner-approved literal key.** |
+| `settings.selects.view` | **Implemented:** read active printing locations and customer types via the shared Selects API; extend to bank accounts and e-wallets when those modules are implemented. |
 
-- The generic parameter-value Index/Show/Create/Update/Delete APIs with `settings.view_parameter_values`, `settings.create_parameter_value`, `settings.update_parameter_value`, and `settings.delete_parameter_value` are implemented. Bank/wallet CRUD permissions remain proposals until implementation. `settings.selects.view` remains the shared selects permission.
+- The generic parameter-value Index/Show/Create/Update/Delete APIs with `settings.view_parameter_values`, `settings.create_parameter_value`, `settings.update_parameter_value`, and `settings.delete_parameter_value` are implemented. The common `settings.selects.view` permission is now implemented for `printingLocations` and `customerTypes` using the existing aggregator. Bank/wallet CRUD and selects remain proposals until implementation.
 - Neither `admin` role name nor frontend visibility alone grants permission to perform an operation.
 - A separate **Production-owned** permission governs administrator-only changes to an in-progress item's printing location; Settings `.update` is insufficient for changing production assignments.
 - Use parameterized/allowlisted filtering, safe database writes, CSRF-protected stateful API access and standard anti-leak handling. Payment destination account identifiers are not secret API keys but still must not be exposed to users without appropriate management authorization.
