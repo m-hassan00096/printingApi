@@ -4,6 +4,7 @@ namespace Modules\Settings\Tests\Feature\PaymentDestinations;
 
 require_once __DIR__.'/Support/PaymentDestinationTestCase.php';
 
+use Modules\Settings\Enums\DefaultStatus;
 use Modules\Settings\Enums\PaymentDestinationStatus;
 use Modules\Settings\Models\BankAccount;
 use Modules\Settings\Models\EWallet;
@@ -22,18 +23,18 @@ class EWalletTest extends PaymentDestinationTestCase
 
     public function test_first_active_wallet_becomes_default(): void
     {
-        $wallet = $this->createWallet(['isDefault' => false]);
+        $wallet = $this->createWallet(['isDefault' => 0]);
 
-        $this->assertTrue($wallet->is_default);
+        $this->assertSame(DefaultStatus::DEFAULT, $wallet->is_default);
         $this->assertSame('01012345678', $wallet->phone);
         $this->assertSame($this->administrator->id, $wallet->created_by);
     }
 
     public function test_inactive_wallet_does_not_become_default(): void
     {
-        $wallet = $this->createWallet(['status' => 0, 'isDefault' => true]);
+        $wallet = $this->createWallet(['status' => 0, 'isDefault' => 1]);
 
-        $this->assertFalse($wallet->is_default);
+        $this->assertSame(DefaultStatus::NOT_DEFAULT, $wallet->is_default);
         $this->assertSame(PaymentDestinationStatus::INACTIVE, $wallet->status);
     }
 
@@ -116,14 +117,14 @@ class EWalletTest extends PaymentDestinationTestCase
         $first = $this->createWallet();
         $next = $this->createWallet(['phone' => '01112345678']);
 
-        $this->patchJson($this->walletUrl($next->id), ['isDefault' => true])
+        $this->patchJson($this->walletUrl($next->id), ['isDefault' => 1])
             ->assertOk()
-            ->assertJsonPath('data.isDefault', true);
+            ->assertJsonPath('data.isDefault', 1);
 
-        $this->assertFalse($first->fresh()->is_default);
-        $this->assertTrue($next->fresh()->is_default);
-        $this->assertTrue(BankAccount::findOrFail($bankId)->is_default);
-        $this->assertSame(1, EWallet::where('is_default', true)->count());
+        $this->assertSame(DefaultStatus::NOT_DEFAULT, $first->fresh()->is_default);
+        $this->assertSame(DefaultStatus::DEFAULT, $next->fresh()->is_default);
+        $this->assertSame(DefaultStatus::DEFAULT, BankAccount::findOrFail($bankId)->is_default);
+        $this->assertSame(1, EWallet::where('is_default', DefaultStatus::DEFAULT->value)->count());
     }
 
     public function test_deactivating_default_selects_next_active_wallet(): void
@@ -133,9 +134,9 @@ class EWalletTest extends PaymentDestinationTestCase
 
         $this->patchJson($this->walletUrl($first->id), ['status' => 0])
             ->assertOk()
-            ->assertJsonPath('data.isDefault', false);
+            ->assertJsonPath('data.isDefault', 0);
 
-        $this->assertTrue($next->fresh()->is_default);
+        $this->assertSame(DefaultStatus::DEFAULT, $next->fresh()->is_default);
     }
 
     public function test_wallet_default_may_be_empty_when_nothing_is_active(): void
@@ -144,7 +145,7 @@ class EWalletTest extends PaymentDestinationTestCase
 
         $this->patchJson($this->walletUrl($wallet->id), ['status' => 0])->assertOk();
 
-        $this->assertSame(0, EWallet::where('is_default', true)->count());
+        $this->assertSame(0, EWallet::where('is_default', DefaultStatus::DEFAULT->value)->count());
     }
 
     public function test_update_keeps_leading_zero_and_can_clear_payment_link(): void
@@ -234,7 +235,7 @@ class EWalletTest extends PaymentDestinationTestCase
             ->assertJsonPath('data', null);
 
         $this->assertSoftDeleted('e_wallets', ['id' => $first->id]);
-        $this->assertTrue($next->fresh()->is_default);
+        $this->assertSame(DefaultStatus::DEFAULT, $next->fresh()->is_default);
         $this->getJson($this->walletUrl($first->id))->assertNotFound();
     }
 
