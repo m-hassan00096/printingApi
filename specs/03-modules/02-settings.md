@@ -202,7 +202,7 @@ No IBAN, account holder name, internal alias, opening balance or additional bank
 
 ## 9. Default payment destination rules
 
-Bank account defaults and wallet defaults form **independent sets**.
+Bank account defaults and wallet defaults form **independent sets**. Both sets now use transactional management through `PaymentDestinationDefaultService` and dedicated per-type lock rows in `settings_payment_default_locks`.
 
 1. At any time, each set has **at most one active, non-deleted default**.
 2. The **first active** account/wallet added becomes default automatically, even if the create payload does not nominate it.
@@ -281,7 +281,7 @@ Indexes: the original `(parameter_id, name)` index is replaced by a **unique** `
 | `created_at`, `updated_at` | Timestamps | Laravel timestamps. |
 | `deleted_at` | Nullable timestamp | Soft Delete. |
 
-No IBAN column. Uniqueness on deleted rows remains subject to §18.
+No IBAN column. The current database unique index on `account_number` includes soft-deleted rows; retaining that behavior is **provisional** pending SET-OPEN-01.
 
 ### 11.4 `e_wallets`
 
@@ -297,6 +297,8 @@ No IBAN column. Uniqueness on deleted rows remains subject to §18.
 | `created_by`, `updated_by` | `BIGINT UNSIGNED NULL` | Optional FKs to `users.id`; populated with authenticated actor on model create/update; nullable for seeders/CLI. |
 | `created_at`, `updated_at` | Timestamps | Laravel timestamps. |
 | `deleted_at` | Nullable timestamp | Soft Delete. |
+
+The current database unique index on `phone` also covers soft-deleted wallets; this reservation policy is **provisional** pending SET-OPEN-01.
 
 **Shared audit columns for Settings business tables:** `parameter_values`, `bank_accounts` and `e_wallets` (and future user-managed business tables) require Laravel `softDeletes()` plus nullable `created_by` and `updated_by` foreign keys to Identity `users.id`. Use the reusable migration trait `App\\Database\\Migrations\\Concerns\\HasCreatedUpdatedByColumns` for the actor columns and the model trait `App\\Models\\Concerns\\CreatedUpdatedBy` for automatic actor stamping and `createdBy`/`updatedBy` relationships. `created_by` is stamped on insert and `updated_by` on later updates when an authenticated actor is available; otherwise the fields remain nullable. The actor relationships include soft-deleted users; physical deletion of referenced users is restricted. **Do not add these audit columns or Soft Deletes to backend-only `parameters`.** No deletion-actor history is requested.
 
@@ -345,20 +347,28 @@ The generic parameter-value **Index, Show, Create, Update and Soft Delete** endp
 - **Integration constraint:** historical-use checks for Customer/Production associations must be enforced before those modules expose their associations to these values. Current Settings has no Customer or Production usage relationships; the present Delete Action does **not** yet block deletion of historically referenced values.
 - Input validation (required fields, enum status, trimmed names and group-scoped uniqueness) belongs to StoreParameterValueRequest and UpdateParameterValueRequest, not duplicated in Actions. The update Action handles the transactional row-locked write; the create Action writes through the Parameter relationship.
 
-### 12.2 Bank accounts and e-wallets — proposed routes
+### 12.2 Bank accounts and e-wallets — CRUD implemented (integration caveats below)
 
 | Method | Path | Permission pattern | Behavior |
 |---|---|---|---|
 | `GET` | `/settings/bank-accounts` | `settings.bank_accounts.view` | Paginated management list. |
 | `POST` | `/settings/bank-accounts` | `settings.bank_accounts.create` | Create account; enforce unique number/default logic. |
-| `GET` | `/settings/bank-accounts/{id}` | `settings.bank_accounts.view` | Details including full account number. |
-| `PUT` | `/settings/bank-accounts/{id}` | `settings.bank_accounts.update` | Update fields and default/status atomically. |
-| `DELETE` | `/settings/bank-accounts/{id}` | `settings.bank_accounts.delete` | Soft-delete only if never used. |
+| `GET` | `/settings/bank-accounts/{bankAccount}` | `settings.bank_accounts.view` | Details including full account number. |
+| `PUT` / `PATCH` | `/settings/bank-accounts/{bankAccount}` | `settings.bank_accounts.update` | Update fields and default/status atomically. |
+| `DELETE` | `/settings/bank-accounts/{bankAccount}` | `settings.bank_accounts.delete` | Soft-delete; historical-use protection must be integrated with Finance before the account can be referenced by receipts or advances. |
 | `GET` | `/settings/e-wallets` | `settings.e_wallets.view` | Paginated management list. |
 | `POST` | `/settings/e-wallets` | `settings.e_wallets.create` | Create wallet; validate phone/default logic. |
-| `GET` | `/settings/e-wallets/{id}` | `settings.e_wallets.view` | Details including full phone. |
-| `PUT` | `/settings/e-wallets/{id}` | `settings.e_wallets.update` | Update wallet/default/status atomically. |
-| `DELETE` | `/settings/e-wallets/{id}` | `settings.e_wallets.delete` | Soft-delete only if never used. |
+| `GET` | `/settings/e-wallets/{eWallet}` | `settings.e_wallets.view` | Details including full phone. |
+| `PUT` / `PATCH` | `/settings/e-wallets/{eWallet}` | `settings.e_wallets.update` | Update wallet/default/status atomically. |
+| `DELETE` | `/settings/e-wallets/{eWallet}` | `settings.e_wallets.delete` | Soft-delete; historical-use protection must be integrated with Finance before the wallet can be referenced by receipts or advances. |
+
+Both management indexes use the Identity-style `filter[search]`, `filter[status]`, `page`, `perPage` (1–100, default 15) and `sort` query parameters. Search for bank accounts includes `bank_name` and `account_number`; wallet search includes `name`, `phone` and `account_holder`. Sort allowlists are `id,bank_name,created_at` (banks) and `id,name,created_at` (wallets); default `-id`. List response data uses `bankAccounts` or `eWallets` plus `pagination` matching UserCollection. Normal management lists include inactive rows and exclude soft-deleted rows. Details return full account/phone identifiers to holders of the corresponding view permission.
+
+Store requests require `bankName,accountNumber,status` for banks, and `name,phone,accountHolder,status` for wallets; `isDefault` is optional and is managed server-side. `paymentLink` is optional nullable plain text, not a URL validator. Phone is canonical `01[0125]` followed by eight ASCII digits. Update requests are partial (PUT/PATCH) and trim supported text fields. All mutations run through dedicated Actions and `PaymentDestinationDefaultService`.
+
+**Default concurrency implementation:** the service acquires a transactional `SELECT ... FOR UPDATE` lock on a pre-seeded row in `settings_payment_default_locks` for each type, including when there are no accounts yet. This serializes all Settings default changes within each type in MySQL. A new active account automatically becomes default when no eligible default exists; selecting another explicit default demotes the previous one. An inactive/deleted default is replaced with an active candidate where available. **Temporary unresolved rule SET-OPEN-02:** choose the oldest eligible `id` when a replacement must be selected; this is an implementation fallback, **not** an approved policy. **Temporary unresolved SET-OPEN-01:** the current plain unique indexes also reserve numbers after Soft Delete; confirm the permanent reservation policy before production data migration. A separate database-level partial uniqueness invariant for default flags has not been added; all writes must use these Actions.
+
+**Finance integration boundary:** payment destinations are not referenced by any Finance receipt/advance schema yet, so these Delete Actions cannot enforce the approved historical-usage restriction. Finance integration must add a reference check (including historic/soft-deleted transactions) before financial posting is enabled. No balances, transfers, or Finance snapshots are implemented here.
 
 **Do not** expose user-facing `POST /settings/parameters` or `PUT /settings/parameters/{id}`. The generic create endpoint accepts only an ID that already exists in the backend-seeded `parameters` table. The parameter groups themselves are not user-editable.
 
@@ -553,17 +563,17 @@ The following **proposed technical permissions** are owned by Settings and seede
 | `settings.customer_types.view` | View customer types. |
 | `settings.customer_types.update` | Update customer type name/description/status. |
 | `settings.customer_types.delete` | Soft-delete eligible customer types. |
-| `settings.bank_accounts.view` | View bank accounts, including full account numbers. |
+| `settings.bank_accounts.view` | **Implemented:** view bank accounts, including full account numbers. |
 | `settings.bank_accounts.create` | Create bank accounts. |
 | `settings.bank_accounts.update` | Update bank account fields/default/status. |
 | `settings.bank_accounts.delete` | Soft-delete eligible bank accounts. |
-| `settings.e_wallets.view` | View e-wallets, including full phone numbers. |
+| `settings.e_wallets.view` | **Implemented:** view e-wallets, including full phone numbers. |
 | `settings.e_wallets.create` | Create e-wallets. |
 | `settings.e_wallets.update` | Update wallet fields/default/status. |
 | `settings.e_wallets.delete` | Soft-delete eligible e-wallets. |
 | `settings.selects.view` | **Implemented:** read active printing locations and customer types via the shared Selects API; extend to bank accounts and e-wallets when those modules are implemented. |
 
-- The generic parameter-value Index/Show/Create/Update/Delete APIs with `settings.view_parameter_values`, `settings.create_parameter_value`, `settings.update_parameter_value`, and `settings.delete_parameter_value` are implemented. The common `settings.selects.view` permission is now implemented for `printingLocations` and `customerTypes` using the existing aggregator. Bank/wallet CRUD and selects remain proposals until implementation.
+- The generic parameter-value Index/Show/Create/Update/Delete APIs and the separate bank/wallet Index/Show/Create/Update/Delete APIs are implemented, with permission checks per operation. The common `settings.selects.view` permission currently registers `printingLocations` and `customerTypes` only; bank/wallet Selects remain unregistered until their label/masking format is approved. Historic-use deletion checks await owning-module integration.
 - Neither `admin` role name nor frontend visibility alone grants permission to perform an operation.
 - A separate **Production-owned** permission governs administrator-only changes to an in-progress item's printing location; Settings `.update` is insufficient for changing production assignments.
 - Use parameterized/allowlisted filtering, safe database writes, CSRF-protected stateful API access and standard anti-leak handling. Payment destination account identifiers are not secret API keys but still must not be exposed to users without appropriate management authorization.
@@ -583,8 +593,8 @@ These questions are **not authorization to implement guessed behavior**. They re
 
 | ID | Open decision | Suggested default for discussion |
 |---|---|---|
-| SET-OPEN-01 | After a never-used **bank account or e-wallet** is soft-deleted, can its unique account number / phone be reused? | Pending for bank accounts/e-wallets. **Resolved for `parameter_values`: group-scoped names are permanently reserved (SET-031).** |
-| SET-OPEN-02 | When a disabled default has multiple eligible replacement accounts, which becomes default? | Pick the **oldest active (`id ASC`)** deterministically; pending approval. |
+| SET-OPEN-01 | After a never-used **bank account or e-wallet** is soft-deleted, can its unique account number / phone be reused? | **Still pending.** Implementation temporarily retains deleted numbers in unique indexes. The owner must confirm before the behavior is treated as final. Parameter-value names are permanently reserved under SET-031. |
+| SET-OPEN-02 | When a disabled default has multiple eligible replacement accounts, which becomes default? | **Still pending.** Implementation currently selects oldest active (`id ASC`) as an explicitly provisional deterministic fallback, not an owner-approved priority. |
 | SET-OPEN-03 | When the printing location's display name changes during active printing, should the final item snapshot reflect the name at printing **start** or **stage close**? | Capture/finalize at **stage close**, consistent with “final location”; pending approval. |
 | SET-OPEN-04 | Confirm existing orders (even not-yet-designed orders) always retain their originally stored price if customer type changes. | **Yes**, based on the latest discussion; earlier statement mentioned automatic repricing, so this needs explicit confirmation for the Services/Orders references. |
 | SET-OPEN-05 | Define historic usage checks precisely: references from current or soft-deleted customers/items, canceled receipts, reversed/deleted financial records, etc. | Preserve deletion restrictions whenever historic association exists; settle final scope with owning modules. |
@@ -593,7 +603,7 @@ These questions are **not authorization to implement guessed behavior**. They re
 | SET-OPEN-08 | Final REST update method (`PUT` versus `PATCH`) and exact CRUD permission name notation to match current repository conventions. | Use the established current module conventions, not older sample documents. |
 | SET-OPEN-09 | If a printing location is made inactive while assigned to an item in an **open printing stage**, whether to allow completion without reassignment. | Preserve the existing assignment to avoid blocking work; new selections must require active locations. This is ultimately a Production workflow decision. |
 
-Until the remaining decisions are approved, related future-module tests and indexes are preliminary. The parameter-values unique index and soft-deleted-name reservation are now approved under SET-031; the bank/wallet soft-delete uniqueness policy remains open.
+Until the remaining decisions are approved, related future-module tests and indexes are preliminary. The parameter-values unique index and soft-deleted-name reservation are approved under SET-031; the bank/wallet soft-delete uniqueness policy, replacement-default priority and financial Selects label format remain open. The provisional implementation behavior above is not final owner approval.
 
 ## 19. Testing and acceptance criteria
 
