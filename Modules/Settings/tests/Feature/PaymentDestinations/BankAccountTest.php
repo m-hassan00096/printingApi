@@ -4,6 +4,7 @@ namespace Modules\Settings\Tests\Feature\PaymentDestinations;
 
 require_once __DIR__.'/Support/PaymentDestinationTestCase.php';
 
+use Modules\Settings\Enums\DefaultStatus;
 use Modules\Settings\Enums\PaymentDestinationStatus;
 use Modules\Settings\Models\BankAccount;
 use Modules\Settings\Tests\Feature\PaymentDestinations\Support\PaymentDestinationTestCase;
@@ -19,11 +20,11 @@ class BankAccountTest extends PaymentDestinationTestCase
         return BankAccount::findOrFail($id);
     }
 
-    public function test_first_active_account_becomes_default_even_when_false(): void
+    public function test_first_active_account_becomes_default_even_when_zero(): void
     {
         $account = $this->createAccount();
 
-        $this->assertTrue($account->is_default);
+        $this->assertSame(DefaultStatus::DEFAULT, $account->is_default);
         $this->assertSame('001234567890', $account->account_number);
         $this->assertSame(PaymentDestinationStatus::ACTIVE, $account->status);
         $this->assertSame($this->administrator->id, $account->created_by);
@@ -31,11 +32,11 @@ class BankAccountTest extends PaymentDestinationTestCase
 
     public function test_first_inactive_account_does_not_become_default(): void
     {
-        $inactive = $this->createAccount(['status' => 0, 'isDefault' => true]);
-        $this->assertFalse($inactive->is_default);
+        $inactive = $this->createAccount(['status' => 0, 'isDefault' => 1]);
+        $this->assertSame(DefaultStatus::NOT_DEFAULT, $inactive->is_default);
 
-        $active = $this->createAccount(['accountNumber' => '002', 'isDefault' => false]);
-        $this->assertTrue($active->is_default);
+        $active = $this->createAccount(['accountNumber' => '002', 'isDefault' => 0]);
+        $this->assertSame(DefaultStatus::DEFAULT, $active->is_default);
     }
 
     public function test_another_active_account_is_not_default_without_request(): void
@@ -43,8 +44,8 @@ class BankAccountTest extends PaymentDestinationTestCase
         $default = $this->createAccount();
         $other = $this->createAccount(['accountNumber' => '002']);
 
-        $this->assertTrue($default->fresh()->is_default);
-        $this->assertFalse($other->is_default);
+        $this->assertSame(DefaultStatus::DEFAULT, $default->fresh()->is_default);
+        $this->assertSame(DefaultStatus::NOT_DEFAULT, $other->is_default);
     }
 
     public function test_can_switch_default_atomically_within_bank_group(): void
@@ -52,13 +53,13 @@ class BankAccountTest extends PaymentDestinationTestCase
         $old = $this->createAccount();
         $new = $this->createAccount(['accountNumber' => '002']);
 
-        $this->patchJson($this->bankUrl($new->id), ['isDefault' => true])
+        $this->patchJson($this->bankUrl($new->id), ['isDefault' => 1])
             ->assertOk()
-            ->assertJsonPath('data.isDefault', true);
+            ->assertJsonPath('data.isDefault', 1);
 
-        $this->assertFalse($old->fresh()->is_default);
-        $this->assertTrue($new->fresh()->is_default);
-        $this->assertSame(1, BankAccount::where('is_default', true)->count());
+        $this->assertSame(DefaultStatus::NOT_DEFAULT, $old->fresh()->is_default);
+        $this->assertSame(DefaultStatus::DEFAULT, $new->fresh()->is_default);
+        $this->assertSame(1, BankAccount::where('is_default', DefaultStatus::DEFAULT->value)->count());
     }
 
     public function test_deactivating_default_promotes_another_active_account(): void
@@ -70,10 +71,10 @@ class BankAccountTest extends PaymentDestinationTestCase
         $this->patchJson($this->bankUrl($default->id), ['status' => 0])
             ->assertOk()
             ->assertJsonPath('data.status', 0)
-            ->assertJsonPath('data.isDefault', false);
+            ->assertJsonPath('data.isDefault', 0);
 
-        $this->assertTrue($next->fresh()->is_default);
-        $this->assertSame(1, BankAccount::where('is_default', true)->count());
+        $this->assertSame(DefaultStatus::DEFAULT, $next->fresh()->is_default);
+        $this->assertSame(1, BankAccount::where('is_default', DefaultStatus::DEFAULT->value)->count());
     }
 
     public function test_no_default_when_all_accounts_are_inactive(): void
@@ -82,7 +83,7 @@ class BankAccountTest extends PaymentDestinationTestCase
 
         $this->patchJson($this->bankUrl($account->id), ['status' => 0])->assertOk();
 
-        $this->assertSame(0, BankAccount::where('is_default', true)->count());
+        $this->assertSame(0, BankAccount::where('is_default', DefaultStatus::DEFAULT->value)->count());
     }
 
     public function test_reactivating_only_active_account_makes_it_default(): void
@@ -91,7 +92,7 @@ class BankAccountTest extends PaymentDestinationTestCase
 
         $this->patchJson($this->bankUrl($account->id), ['status' => 1])
             ->assertOk()
-            ->assertJsonPath('data.isDefault', true);
+            ->assertJsonPath('data.isDefault', 1);
     }
 
     public function test_can_update_account_details_without_changing_the_default(): void
@@ -105,7 +106,7 @@ class BankAccountTest extends PaymentDestinationTestCase
             ->assertOk()
             ->assertJsonPath('data.bankName', 'Updated Bank')
             ->assertJsonPath('data.accountNumber', '00000015')
-            ->assertJsonPath('data.isDefault', true);
+            ->assertJsonPath('data.isDefault', 1);
 
         $this->assertSame($this->administrator->id, $account->fresh()->updated_by);
     }
@@ -226,7 +227,7 @@ class BankAccountTest extends PaymentDestinationTestCase
             ->assertJsonPath('data', null);
 
         $this->assertSoftDeleted('bank_accounts', ['id' => $old->id]);
-        $this->assertTrue($next->fresh()->is_default);
+        $this->assertSame(DefaultStatus::DEFAULT, $next->fresh()->is_default);
         $this->getJson($this->bankUrl($old->id))->assertNotFound();
     }
 
