@@ -94,6 +94,7 @@ The following rows record **owner-confirmed decisions** from the Settings discus
 | SET-029 | Duplicate printing-location and customer-type names are rejected after trimming surrounding spaces. |
 | SET-030 | Seed starter parameter groups and illustrative customer-type/printing-location values; **do not seed actual or dummy bank accounts or wallets**. |
 | SET-031 | A `parameter_values.name` remains permanently reserved within its `parameter_id` after Soft Delete. Enforce this with a database unique constraint on `(parameter_id, name)`, as well as request validation. Names remain reusable across **different** groups. |
+| SET-032 | Bank accounts and e-wallets share the Settings-level integer-backed `DefaultStatus` enum (`NOT_DEFAULT = 0`, `DEFAULT = 1`). Requests, management resources and Selects use numeric `isDefault` (`0`/`1`), not JSON booleans; models cast `is_default` to the enum. |
 
 ## 4. Lookup model and parameter ownership
 
@@ -275,7 +276,7 @@ Indexes: the original `(parameter_id, name)` index is replaced by a **unique** `
 | `id` | `BIGINT UNSIGNED` | PK. |
 | `bank_name` | `VARCHAR(150)` | Required. |
 | `account_number` | `VARCHAR(50)` | Required, unique after approved normalization. |
-| `is_default` | `BOOLEAN` | At most one eligible default across active accounts. |
+| `is_default` | `BOOLEAN` (DB stores `0` / `1`) | Cast to `DefaultStatus` enum (`NOT_DEFAULT = 0`, `DEFAULT = 1`). At most one eligible default across active accounts. |
 | `status` | `TINYINT` | Required, `0` or `1`. |
 | `created_by`, `updated_by` | `BIGINT UNSIGNED NULL` | Optional FKs to `users.id`; populated with authenticated actor on model create/update; nullable for seeders/CLI. |
 | `created_at`, `updated_at` | Timestamps | Laravel timestamps. |
@@ -292,7 +293,7 @@ No IBAN column. The current database unique index on `account_number` includes s
 | `phone` | `VARCHAR(20)` | Required, unique, exact Egyptian 11-digit mobile after normalization. |
 | `account_holder` | `VARCHAR(150)` | Required. |
 | `payment_link` | `TEXT NULL` | Optional free text. |
-| `is_default` | `BOOLEAN` | At most one eligible default across active wallets. |
+| `is_default` | `BOOLEAN` (DB stores `0` / `1`) | Cast to the same `DefaultStatus` enum. At most one eligible default across active wallets. |
 | `status` | `TINYINT` | Required, `0` or `1`. |
 | `created_by`, `updated_by` | `BIGINT UNSIGNED NULL` | Optional FKs to `users.id`; populated with authenticated actor on model create/update; nullable for seeders/CLI. |
 | `created_at`, `updated_at` | Timestamps | Laravel timestamps. |
@@ -364,7 +365,7 @@ The generic parameter-value **Index, Show, Create, Update and Soft Delete** endp
 
 Both management indexes use the Identity-style `filter[search]`, `filter[status]`, `page`, `perPage` (1–100, default 15) and `sort` query parameters. Search for bank accounts includes `bank_name` and `account_number`; wallet search includes `name`, `phone` and `account_holder`. Sort allowlists are `id,bankName,created_at` (banks; `bankName` maps safely to `bank_name`) and `id,name,created_at` (wallets); default `-id`. List response data uses `bankAccounts` or `eWallets` plus `pagination` matching UserCollection. Normal management lists include inactive rows and exclude soft-deleted rows. Details return full account/phone identifiers to holders of the corresponding view permission.
 
-Store requests require `bankName,accountNumber,status` for banks, and `name,phone,accountHolder,status` for wallets; `isDefault` is optional and is managed server-side. `paymentLink` is optional nullable plain text, not a URL validator. Phone is canonical `01[0125]` followed by eight ASCII digits. Update requests are partial (PUT/PATCH) and trim supported text fields. All mutations run through dedicated Actions and `PaymentDestinationDefaultService`.
+Store requests require `bankName,accountNumber,status` for banks, and `name,phone,accountHolder,status` for wallets; `isDefault` is optional, accepts only integer `0`/`1` via `Rule::enum(DefaultStatus::class)`, and is managed server-side. Eloquent models use the shared `DefaultStatus` enum rather than boolean casts. `paymentLink` is optional nullable plain text, not a URL validator. Phone is canonical `01[0125]` followed by eight ASCII digits. Update requests are partial (PUT/PATCH) and trim supported text fields. All mutations run through dedicated Actions and `PaymentDestinationDefaultService`.
 
 **Default concurrency implementation:** the service acquires a transactional `SELECT ... FOR UPDATE` lock on a pre-seeded row in `settings_payment_default_locks` for each type, including when there are no accounts yet. This serializes all Settings default changes within each type in MySQL. A new active account automatically becomes default when no eligible default exists; selecting another explicit default demotes the previous one. An inactive/deleted default is replaced with an active candidate where available. **Temporary unresolved rule SET-OPEN-02:** choose the oldest eligible `id` when a replacement must be selected; this is an implementation fallback, **not** an approved policy. **Temporary unresolved SET-OPEN-01:** the current plain unique indexes also reserve numbers after Soft Delete; confirm the permanent reservation policy before production data migration. A separate database-level partial uniqueness invariant for default flags has not been added; all writes must use these Actions.
 
@@ -424,14 +425,14 @@ POST /api/v1/settings/parameter-values
 {
   "bankName": "البنك الأهلي المصري",
   "accountNumber": "001234567890",
-  "isDefault": true,
+  "isDefault": 1,
   "status": 1
 }
 ```
 
 - The bank number remains a **string** in API and MySQL; there is no `iban` field.
 - A request that makes one account default must atomically demote the old default.
-- The first active account will be default even when `isDefault` is `false`, because the invariant takes precedence.
+- The first active account will be default even when `isDefault` is `0`, because the invariant takes precedence.
 
 ### 13.4 Create e-wallet
 
@@ -441,7 +442,7 @@ POST /api/v1/settings/parameter-values
   "phone": "01012345678",
   "accountHolder": "اسم صاحب الحساب",
   "paymentLink": "تحويل على رقم المحفظة",
-  "isDefault": false,
+  "isDefault": 0,
   "status": 1
 }
 ```
@@ -538,7 +539,7 @@ The shared aggregator returns an **ordered array** of `{ "label": key, "options"
 - The bank account number is a string with uniqueness validation and no coercion to numeric values.
 - The wallet phone number is exactly **11 ASCII digits** in an Egyptian mobile format beginning with `01`, stored as a string. A final decision on accepted punctuation/+20 input normalization can be made in the Form Request contract; stored canonical format remains 11 digits.
 - `paymentLink` is nullable free text, **not** URL-only validation.
-- `status` is exactly `0` or `1`; `isDefault` is a boolean for payment accounts. User-supplied IDs must not be trusted without group and eligibility checks.
+- `status` is exactly `0` or `1`; `isDefault` is an **integer-backed enum** (`DefaultStatus::NOT_DEFAULT = 0`, `DefaultStatus::DEFAULT = 1`) for both payment destinations. Boolean `true`/`false` input and out-of-range values are rejected (`422`). User-supplied IDs must not be trusted without group and eligibility checks.
 - Update payloads must not mutate technical parameter group identity or bypass `isDefault` invariants.
 
 ### 15.2 State and business error examples
