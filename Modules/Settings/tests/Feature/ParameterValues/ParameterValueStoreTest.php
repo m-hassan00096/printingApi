@@ -29,6 +29,17 @@ class ParameterValueStoreTest extends ParameterValueTestCase
         $this->assertNull($value->updated_by);
     }
 
+    public function test_printing_location_cannot_have_description(): void
+    {
+        $this->postJson($this->url(), $this->payload([
+            'description' => 'Not allowed for a printing location',
+        ]))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('description');
+
+        $this->assertDatabaseCount('parameter_values', 0);
+    }
+
     public function test_can_create_customer_type_with_optional_description(): void
     {
         $this->postJson($this->url(), $this->payload([
