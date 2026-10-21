@@ -9,13 +9,34 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Arr;
 use Modules\Settings\Actions\ParameterValues\CreateParameterValueAction;
 use Modules\Settings\Actions\ParameterValues\UpdateParameterValueAction;
+use Modules\Settings\Http\Requests\ParameterValues\IndexParameterValuesRequest;
 use Modules\Settings\Http\Requests\ParameterValues\StoreParameterValueRequest;
 use Modules\Settings\Http\Requests\ParameterValues\UpdateParameterValueRequest;
+use Modules\Settings\Http\Resources\ParameterValueCollection;
 use Modules\Settings\Http\Resources\ParameterValueResource;
 use Modules\Settings\Models\ParameterValue;
+use Modules\Settings\Services\ParameterValueQueryService;
 
 class ParameterValueController extends Controller
 {
+    public function index(
+        IndexParameterValuesRequest $request,
+        ParameterValueQueryService $parameters,
+    ): JsonResponse {
+        return ApiResponse::success(
+            data: (new ParameterValueCollection($parameters->paginate($request)))->resolve($request),
+        );
+    }
+
+    public function show(
+        ParameterValue $parameterValue,
+        ParameterValueQueryService $parameters,
+    ): JsonResponse {
+        return ApiResponse::success(
+            data: (new ParameterValueResource($parameters->find($parameterValue)))->resolve(),
+        );
+    }
+
     public function store(
         StoreParameterValueRequest $request,
         CreateParameterValueAction $createParameterValueAction,
