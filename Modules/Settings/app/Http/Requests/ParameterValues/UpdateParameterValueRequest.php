@@ -28,10 +28,6 @@ class UpdateParameterValueRequest extends FormRequest
         /** @var ParameterValue $parameterValue */
         $parameterValue = $this->route('parameterValue');
 
-        $isPrintingLocation = $parameterValue->parameter()
-            ->where('name', 'printing_locations')
-            ->exists();
-
         return [
             'parameterId' => ['prohibited'],
             'parameter_id' => ['prohibited'],
@@ -44,7 +40,7 @@ class UpdateParameterValueRequest extends FormRequest
                     ->where('parameter_id', $parameterValue->parameter_id)
                     ->ignore($parameterValue),
             ],
-            'description' => ['sometimes', 'nullable', 'string', Rule::prohibitedIf($isPrintingLocation)],
+            'description' => ['sometimes', 'nullable', 'string'],
             'status' => [
                 'sometimes',
                 'required',
