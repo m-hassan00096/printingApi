@@ -16,6 +16,10 @@
         <testsuite name="Identity Module">
             <directory>Modules/Identity/tests</directory>
         </testsuite>
+
+        <testsuite name="Settings Module">
+            <directory>Modules/Settings/tests</directory>
+        </testsuite>
     </testsuites>
     <source>
         <include>
