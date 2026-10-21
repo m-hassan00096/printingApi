@@ -6,13 +6,13 @@ use App\Models\Concerns\CreatedUpdatedBy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Modules\Settings\Enums\ParameterValueStatus;
 
 class ParameterValue extends Model
 {
     use SoftDeletes, CreatedUpdatedBy;
 
     protected $fillable = [
-        'parameter_id',
         'name',
         'description',
         'status',
@@ -21,7 +21,7 @@ class ParameterValue extends Model
     protected function casts(): array
     {
         return [
-            'status' => 'integer',
+            'status' => ParameterValueStatus::class,
         ];
     }
 
