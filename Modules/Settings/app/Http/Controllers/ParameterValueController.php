@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Arr;
 use Modules\Settings\Actions\ParameterValues\CreateParameterValueAction;
+use Modules\Settings\Actions\ParameterValues\DeleteParameterValueAction;
 use Modules\Settings\Actions\ParameterValues\UpdateParameterValueAction;
 use Modules\Settings\Http\Requests\ParameterValues\IndexParameterValuesRequest;
 use Modules\Settings\Http\Requests\ParameterValues\StoreParameterValueRequest;
@@ -52,6 +53,15 @@ class ParameterValueController extends Controller
             data: (new ParameterValueResource($parameterValue))->resolve($request),
             status: HttpStatusCode::CREATED,
         );
+    }
+
+    public function destroy(
+        ParameterValue $parameterValue,
+        DeleteParameterValueAction $deleteParameterValueAction,
+    ): JsonResponse {
+        $deleteParameterValueAction->execute($parameterValue);
+
+        return ApiResponse::success();
     }
 
     public function update(
