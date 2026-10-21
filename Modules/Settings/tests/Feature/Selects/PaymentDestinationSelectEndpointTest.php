@@ -138,7 +138,7 @@ class PaymentDestinationSelectEndpointTest extends PaymentDestinationTestCase
             'accountNumber' => '002345678901',
         ]))->assertCreated()->json('data.id');
 
-        $this->patchJson($this->bankUrl($newBankId), ['isDefault' => true])->assertOk();
+        $this->patchJson($this->bankUrl($newBankId), ['isDefault' => 1])->assertOk();
 
         $this->grantSelectPermission();
 
