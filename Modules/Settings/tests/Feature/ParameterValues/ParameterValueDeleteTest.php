@@ -118,11 +118,11 @@ class ParameterValueDeleteTest extends ParameterValueTestCase
         $this->staffRole->givePermissionTo('settings.delete_parameter_value');
         $this->loginAs($this->createStaff());
 
-        $this->deleteJson($this->url($value))->assertOk();
-
         $this->postJson($this->url(), $this->payload())->assertForbidden();
         $this->getJson($this->url().'?parameterId='.$this->printingLocations->id)->assertForbidden();
         $this->patchJson($this->url($value), ['name' => 'Updated'])->assertForbidden();
+
+        $this->deleteJson($this->url($value))->assertOk();
     }
 
     public function test_deleted_name_is_still_reserved_within_the_same_group(): void
