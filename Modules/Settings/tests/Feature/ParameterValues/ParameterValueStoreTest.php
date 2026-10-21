@@ -159,6 +159,18 @@ class ParameterValueStoreTest extends ParameterValueTestCase
         $this->assertDatabaseCount('parameter_values', 0);
     }
 
+    public function test_switching_from_admin_session_to_staff_yields_forbidden_not_unauthorized(): void
+    {
+        // Authenticate the administrator via an actual request so Sanctum stores
+        // the admin password hash in the session before switching users.
+        $this->postJson($this->url(), $this->payload())->assertCreated();
+
+        $this->loginAs($this->createStaff());
+
+        $this->postJson($this->url(), $this->payload(['name' => 'Another Print House']))
+            ->assertForbidden();
+    }
+
     public function test_update_only_permission_does_not_allow_creation(): void
     {
         $this->staffRole->givePermissionTo('settings.update_parameter_value');
