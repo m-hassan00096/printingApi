@@ -156,6 +156,22 @@ class ParameterValueDeleteTest extends ParameterValueTestCase
         $this->assertDatabaseCount('parameter_values', 2);
     }
 
+    public function test_updating_another_value_to_a_deleted_name_is_rejected(): void
+    {
+        $deleted = $this->createValue($this->printingLocations, 'Previously Used');
+        $remaining = $this->createValue($this->printingLocations, 'Current Name');
+
+        $this->deleteJson($this->url($deleted))->assertOk();
+
+        $this->patchJson($this->url($remaining), [
+            'name' => 'Previously Used',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('name');
+
+        $this->assertSame('Current Name', $remaining->fresh()->name);
+    }
+
     public function test_database_unique_constraint_protects_deleted_names_without_validation(): void
     {
         $value = $this->createValue($this->printingLocations, 'Reserved Database Name');
