@@ -3,7 +3,7 @@
 > **Project:** طَبعة / Tabaa  
 > **Branch:** `feature/customers`  
 > **Target:** `develop`  
-> **Status:** Decisions in progress; **no Customers implementation exists yet**. This module-named file `05-customers.md` is the requirements/spec artifact to finalize and approve before writing code.  
+> **Status:** Business requirements consolidated for **owner final review**; **no Customers implementation exists yet**. `05-customers.md` is the module requirements file. No coding starts before final sign-off.  
 > **Stack:** Laravel 13 API, MySQL, nwidart/laravel-modules, stateful Sanctum, Spatie Permissions, Spatie Query Builder.  
 > **Language convention:** All translatable/error/validation messages belong in `lang/ar/customers.php` and `lang/en/customers.php`; use translation keys only in code.
 
@@ -42,13 +42,14 @@ Customers owns the **registered customer profile**, current Settings customer-ty
 | CUS-019 | Customer profile fields (including name, phone and customer type) **remain editable when the customer is INACTIVE**; valid type assignment and phone uniqueness checks still apply. |
 | CUS-020 | Staff may edit customer **name and phone even after prior Orders or financial movements**. Historical Orders must retain appropriate order-time display snapshots, and financial records must preserve their posted transaction facts; editing a current customer profile never silently changes saved transaction data. |
 | CUS-021 | **Customer names may repeat**. Do not add a unique constraint on `customers.name`; distinguish customers using their unique phone and ID. |
-| CUS-022 | An ACTIVE customer **must not be deactivated while any persisted order has not yet been delivered**, including not-started, design, printing, partially ready and ready-for-delivery orders. Orders will own the check via a Customers-owned transition-guard contract when implemented. Cancellation semantics still need an explicit decision. |
+| CUS-022 | ACTIVE → INACTIVE is **blocked** when any persisted, non-cancelled order is **not yet delivered**, including not-started, design, printing, partially ready and ready-for-delivery. **Cancelled** orders do not block deactivation; **delivered** orders also do not block it. Orders will implement its own check through a Customers-owned transition-guard contract. |
 | CUS-023 | **Phone equality uses the trimmed input as-is**, without stripping internal spaces, hyphens or prefixes. For example, `01012345678` and `010 12345678` are **distinct** values. Database uniqueness and server validation must follow the same comparison policy. |
 | CUS-024 | A **Soft Deleted customer with no Orders or financial movements** does not alone prevent Soft Deleting their former Settings customer type. **Current customers** and other surviving/historical references (e.g. PrintingServices price tiers) must still be checked by their respective guards. |
+| CUS-025 | An **opening customer debt or credit** is recorded as a **separate Finance operation**, never in customer registration/update. The eventual Finance ledger owns the opening movement and its authorization; Customers CRUD has no opening-balance input or money side effects. |
 
 ## 3. Proposed minimal Customers v1 data model
 
-`customers` — approved core fields; status-transition blocking statuses and cross-module references still require final decisions:
+`customers` — approved core fields; Orders/Finance modules will later implement their own historical-reference and balance integrations:
 
 | DB field | Role / proposed validation |
 |---|---|
@@ -68,10 +69,10 @@ No extra personal fields, company/tax entities, contact persons, multiple addres
 - **CUS-OPEN-01 — Resolved:** phone is unique among live customers and can be reused after Soft Delete. Only trim leading/trailing whitespace, then compare literally: no removal of interior spaces or punctuation, no national/international regex. Persist as a string; ensure the DB unique constraint has the same comparison behavior.
 - **CUS-OPEN-02:** **Optional single address approved.** A single required phone is approved for v1; no multiple contact fields are requested.
 - **CUS-OPEN-03 — Resolved:** customer is Soft Deleted **only if never linked to Orders or financial movements**; its phone becomes available after Soft Delete. Real Orders/Finance usage guards are deferred to those modules, and must be implemented before those modules persist references.
-- **CUS-OPEN-04 — Resolved core behavior:** frontend supplies explicit status on creation. INACTIVE blocks new Orders but permits profile updates, historical viewing and collecting existing dues. ACTIVE → INACTIVE is blocked if the customer has **any not-yet-delivered order** (not-started, design, printing, partially ready, ready for delivery). Orders must implement this guard when orders are first persisted. Treatment of a cancelled undelivered order is a separate lifecycle clarification.
+- **CUS-OPEN-04 — Resolved:** frontend supplies explicit status on creation. INACTIVE blocks new Orders but permits profile updates, historical viewing and collecting existing dues. ACTIVE → INACTIVE is blocked if the customer has any **non-cancelled, not-yet-delivered order**; delivered and cancelled orders do not block the transition. Orders must implement this guard when orders are first persisted.
 - **CUS-OPEN-05 — Resolved:** `filter[search]` matches customer name OR phone only. `filter[customerTypeId]` and `filter[status]` are separate filters; do not search customer-type name via text. QueryBuilder must allowlist only supported filters.
-- **CUS-OPEN-06:** Does opening account debt/credit get entered during registration or as a separate authorized Finance action? Current customer create/edit screenshots have no debt field. In either workflow, the eventual transaction must be a **Finance ledger movement**, not a mutable Customer column. No initial-balance posting will be implemented as part of Customers CRUD without an approved separate Finance contract.
-- **CUS-OPEN-07 — Resolved:** **any undelivered order** blocks customer deactivation, including not-started and ready-to-deliver (not limited to the active production stages). The future Orders status model must define terminal cancellation treatment separately.
+- **CUS-OPEN-06 — Resolved:** opening customer debt/credit is a **separate Finance operation** and an authorized ledger movement, not a field in customer registration or a mutable Customer column. The Customers API does not accept opening balance or perform implicit money posting. Finance will define the entry API, approval/permissions and ledger record later.
+- **CUS-OPEN-07 — Resolved:** any **non-cancelled, undelivered order** blocks customer deactivation, including not-started and ready-to-deliver (not limited to active design/printing). **Cancelled** and **delivered** orders do not block deactivation, although they still count as historical usage that prevents customer Soft Delete.
 - **CUS-OPEN-08 — Resolved:** a customer previously Soft Deleted (and therefore never referenced by Orders or Finance) does **not** reserve the former customer type. Settings may Soft Delete that type if no live customer, price tier or other referencing module blocks it. Keep the physical FK for historical identity; the protection is business-level Soft Delete, not hard delete.
 
 ## 3.1 UI reference — owner's six screenshots, 2026-10-22
@@ -79,11 +80,11 @@ No extra personal fields, company/tax entities, contact persons, multiple addres
 The screenshots are requirements references, not evidence that dependent Orders/Finance APIs currently exist:
 
 - **Customers listing (now):** name, phone, optional address, customer type, active/inactive status, view/edit actions, new customer modal, name-or-phone search, customer-type filter and status filter. The displayed **order count** and **account balance** are **later integrations**, not columns managed by Customers.
-- **Customer create/edit modals (now):** required name/phone and current customer type, optional address, and explicit frontend `status` (ACTIVE/INACTIVE). Inactive customers remain editable, including type/name/phone; Orders must reject them for new orders. Once Orders exists, the transition to INACTIVE must additionally be blocked for customers with an order still in production.
+- **Customer create/edit modals (now):** required name/phone and current customer type, optional address, and explicit frontend `status` (ACTIVE/INACTIVE). Inactive customers remain editable, including type/name/phone; Orders must reject them for new orders. Once Orders exists, ACTIVE → INACTIVE must be blocked for a **non-cancelled, undelivered** order.
 - **Customer details profile tab (now):** read-only profile plus edit modal; tabs for orders and account statement may be represented in the frontend later but must not trigger placeholder backend implementations.
 - **Customer orders tab (later Orders):** order numbers, dates, item counts, totals and production/delivery status are read from Orders-owned data.
 - **Finance cards and statement tab (later Finance):** total liabilities, collections/settlements, current debt, credit, chronological debit/credit movements and running balance are Finance-owned calculated/posted values, **not writable fields on customers**. The new-collection button is Finance functionality.
-- Customers v1 **must not invent** dummy financial balances, ledger entries, order counts, orders tables or collection endpoints just to mimic the visual design.
+- Customers v1 **must not invent** dummy financial balances, ledger entries, order counts, orders tables or collection endpoints just to mimic the visual design. **Opening debt/credit entry is explicitly separate in Finance** and is not exposed in the customer create/update requests.
 
 ## 4. Settings integration — implement in Customers
 
@@ -108,10 +109,10 @@ The screenshots are requirements references, not evidence that dependent Orders/
 
 ### 4.4 Customer deactivation and Orders (future integration)
 
-- Customers owns the customer's ACTIVE/INACTIVE field and the customer status transition. The new business rule prevents ACTIVE → INACTIVE when the customer has an **in-production order**.
+- Customers owns the customer's ACTIVE/INACTIVE field and the customer status transition. The approved rule prevents ACTIVE → INACTIVE when there is **any non-cancelled undelivered order**, including not-started and ready-for-delivery.
 - Orders will own the authoritative check of its order statuses and expose a registered customer-status transition guard. **No Orders tables exist in Customers v1**, so don't hard-code an `orders` table check in the Customers module, and don't claim the future reference rule is already enforced by a nonexistent Orders module.
 - Customers must provide the appropriate guard extension in its eventual design; when Orders is introduced, its provider must register the real guard **before writing actual orders**, and customer-status changes and order lifecycle updates must synchronize their transactions to prevent races.
-- **Any order not delivered blocks deactivation**, including not-started, design, printing, partially ready and ready to deliver. An already delivered order does not block a customer's transition to INACTIVE; it **does** prevent deleting the customer. A cancelled undelivered order's terminal-state semantics remain to be clarified. Inactive customers remain editable and can settle old financial debts.
+- **Any non-cancelled, not-yet-delivered order blocks deactivation**, including not-started, design, printing, partially ready and ready to deliver. **Delivered and cancelled** orders do not block status change, but **any persisted order, even cancelled or delivered, prevents customer Soft Delete**. Inactive customers remain editable and can settle old debts. The exact enum states are owned by the future Orders module; its guard must interpret business cancellation rather than relying solely on a delivery timestamp.
 
 ## 5. API and authorization — proposed v1 boundary
 
@@ -164,7 +165,9 @@ Reuse existing Settings' `ParameterValueUsageRegistry` (do not duplicate it), Id
 7. Customer management endpoints enforce `auth:sanctum` and explicit create/view/update/delete permissions; unauthorized identities return 401/403.
 8. All validation/BusinessException text comes from `lang/ar/customers.php`, `lang/en/customers.php` (or the owning Settings language file); Arabic/English tests verify messages.
 9. Search and pagination conform to agreed QueryBuilder allowlists, and do not expose unsupported filters.
-10. No customer CRUD action posts Finance ledger entries implicitly or writes a denormalized account balance.
+10. No customer CRUD action posts Finance ledger entries implicitly or writes a denormalized account balance; opening debt/credit is a separate future Finance operation.
+11. ACTIVE → INACTIVE is rejected with a localized business conflict if Orders reports a **non-cancelled undelivered order**; **cancelled/delivered** orders do not block deactivation, but **all historical orders** block Soft Delete. Until Orders exists, the interface is a contract and must be wired before live order creation.
+12. A customer with no Orders/Finance references can be Soft Deleted, releasing the phone. Its old Settings customer-type relation by itself does not block type Soft Delete, while a current customer or Pricing-tier relation still does.
 
 ## 8. Suggested implementation order
 
