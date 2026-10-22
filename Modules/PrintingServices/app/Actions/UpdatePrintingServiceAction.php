@@ -59,6 +59,7 @@ class UpdatePrintingServiceAction
                     continue;
                 }
 
+                $this->tierRules->assertPrice($command['price']);
                 $typeId = isset($command['customerTypeId']) ? (int) $command['customerTypeId'] : null;
                 $this->tierRules->assertCustomerType($typeId);
                 $entry = [
