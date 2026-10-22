@@ -3,6 +3,7 @@ namespace Modules\Orders\Tests\Feature\Support;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use Modules\Customers\Enums\CustomerStatus;
 use Modules\Customers\Models\Customer;
 use Modules\Customers\Support\CustomerPhone;
@@ -39,7 +40,11 @@ abstract class OrdersTestCase extends TestCase
         parent::setUp();
 
         config()->set('sanctum.stateful', ['localhost']);
-        $this->withHeaders(['Origin' => 'http://localhost', 'Accept' => 'application/json']);
+        $this->withHeaders([
+            'Origin' => 'http://localhost',
+            'Accept' => 'application/json',
+            'Idempotency-Key' => (string) Str::uuid(),
+        ]);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
         $this->adminRole = Role::create(['name' => 'admin', 'guard_name' => 'web', 'status' => RoleStatus::ACTIVE]);
@@ -124,7 +129,8 @@ abstract class OrdersTestCase extends TestCase
 
     protected function draft(array $changes = []): Order
     {
-        $response = $this->postJson('/api/v1/orders', $this->data($changes));
+        $response = $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/orders', $this->data($changes));
         $response->assertCreated();
 
         return Order::findOrFail($response->json('data.id'));

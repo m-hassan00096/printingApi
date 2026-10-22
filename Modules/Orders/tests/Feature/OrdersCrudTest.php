@@ -31,6 +31,22 @@ class OrdersCrudTest extends OrdersTestCase
         ]);
     }
 
+    public function test_repeated_idempotency_key_does_not_create_duplicate_drafts(): void
+    {
+        $this->withHeader('Idempotency-Key', 'draft-duplicate-case');
+        $first = $this->postJson('/api/v1/orders', $this->data())->assertCreated();
+        $second = $this->postJson('/api/v1/orders', $this->data())->assertCreated();
+
+        $this->assertSame($first->json('data.id'), $second->json('data.id'));
+        $this->assertDatabaseCount('orders', 1);
+        $this->assertDatabaseCount('order_activities', 1);
+        $this->assertDatabaseCount('order_idempotency_keys', 1);
+
+        $this->postJson('/api/v1/orders', $this->data(['notes' => 'Different input']))
+            ->assertStatus(409)
+            ->assertJsonPath('message', __('orders.messages.idempotency_reused'));
+    }
+
     public function test_same_printing_service_may_appear_twice_with_distinct_specs(): void
     {
         $items = $this->data()['items'];
@@ -183,7 +199,8 @@ class OrdersCrudTest extends OrdersTestCase
     {
         foreach (['ar', 'en'] as $locale) {
             app()->setLocale($locale);
-            $this->postJson('/api/v1/orders', $this->data())
+            $this->withHeader('Idempotency-Key', (string) \Illuminate\Support\Str::uuid())
+                ->postJson('/api/v1/orders', $this->data())
                 ->assertCreated()
                 ->assertJsonPath('message', __('orders.messages.draft_created'));
         }
