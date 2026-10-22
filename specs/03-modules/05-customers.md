@@ -46,7 +46,7 @@ Customers owns the **registered customer profile**, current Settings customer-ty
 | CUS-023 | **Phone equality uses the trimmed input as-is**, without stripping internal spaces, hyphens or prefixes. For example, `01012345678` and `010 12345678` are **distinct** values. Database uniqueness and server validation must follow the same comparison policy. |
 | CUS-024 | A **Soft Deleted customer with no Orders or financial movements** does not alone prevent Soft Deleting their former Settings customer type. **Current customers** and other surviving/historical references (e.g. PrintingServices price tiers) must still be checked by their respective guards. |
 | CUS-025 | An **opening customer debt or credit** is recorded as a **separate Finance operation**, never in customer registration/update. The eventual Finance ledger owns the opening movement and its authorization; Customers CRUD has no opening-balance input or money side effects. |
-| CUS-026 | Customer **create/update endpoints return no customer resource**. The ApiResponse wrapper still returns `data: null`; POST 201 and PUT/PATCH 200. Reading full records uses GET endpoints. |
+| CUS-026 | Customer **create/update endpoints return no customer resource** (`data: null`) but include **localized success messages**: `تم إضافة العميل بنجاح` on POST 201 and `تم تعديل العميل بنجاح` on PUT/PATCH 200. Reading full records uses GET endpoints. |
 | CUS-027 | Shared Select Aggregator exposes **two independent keys**: `customers` (all non-Soft Deleted customers, both ACTIVE and INACTIVE) and `activeCustomers` (only ACTIVE non-Soft Deleted customers), both with `label = customer name + " - " + phone` and `value = customer ID`. Both keys are controlled by `customers.selects.view`. |
 
 ## 3. Proposed minimal Customers v1 data model
@@ -140,7 +140,7 @@ Register both `customers` (all non-deleted) and `activeCustomers` (active-only) 
 
 Every Customers management endpoint is under `auth:sanctum`, with `customers.view`, `customers.create`, `customers.update`, `customers.delete` respectively. The shared selects aggregator exposes **both** `customers` and `activeCustomers`, using the same `customers.selects.view` permission for each. No implicit super-admin bypass; Identity RoleSeeder syncs seeded web permissions.
 
-All responses match the app's `ApiResponse` wrapper. Success: `{"success":true,"message":"","data":...}`. Validation: HTTP **422**, `{"success":false,"message":"...","errors":{"field":["..."]}}`; restricted business action: HTTP **409**, same error wrapper; unauthorized **401**; forbidden **403**; unknown or Soft Deleted customer **404**. All messages live in `lang/ar/customers.php` and `lang/en/customers.php`.
+All responses match the app's `ApiResponse` wrapper. GET/index/select and DELETE success messages remain empty where already established; **POST create and PUT/PATCH update return a non-empty translated success `message`** with `data: null`. Validation: HTTP **422**, `{"success":false,"message":"...","errors":{"field":["..."]}}`; restricted business action: HTTP **409**, same error wrapper; unauthorized **401**; forbidden **403**; unknown or Soft Deleted customer **404**. All messages live in `lang/ar/customers.php` and `lang/en/customers.php`.
 
 ### POST /api/v1/customers — 201
 
@@ -158,15 +158,17 @@ Request (camelCase):
 
 `name` required nonblank trimmed string (up to 150 chars); duplicates allowed. `phone` required nonblank trimmed string (up to 100 chars), **unique among live customers** based on the exact trimmed string, with no stripping interior whitespace, case folding or locale-specific phone regex; its exact uniqueness is enforced at DB level and duplicate returns 422 field `phone`. `address` optional nullable string, up to 1000 chars; omitted becomes null. `customerTypeId` required positive integer from the **active and not-deleted** Settings `customer_types` group; update/creation revalidates it while holding the type's DB lock. `status` required integer enum `0=INACTIVE, 1=ACTIVE`, **provided by frontend**, no backend default. Snake_case aliases are not accepted.
 
-**Success: HTTP 201 with no returned customer resource.** The API retains the standard response wrapper:
+**Success: HTTP 201 with localized confirmation and no returned customer resource.** The API retains the standard response wrapper:
 
 ```json
 {
   "success": true,
-  "message": "",
+  "message": "تم إضافة العميل بنجاح",
   "data": null
 }
 ```
+
+The controller must pass `__('customers.messages.created')` to `ApiResponse::success()`; define both `lang/ar/customers.php` and `lang/en/customers.php` entries. The Arabic translation is **تم إضافة العميل بنجاح**, and the English translation should be **Customer added successfully.**
 
 If the frontend needs the newly created customer's full details, it must fetch them through a read endpoint (rather than relying on the create response). The API does **not** return the new ID in `data` under this contract.
 
@@ -205,7 +207,17 @@ Returns the same Customer Resource inside `data`. Eager-load customer type to pr
 
 ### PUT/PATCH /api/v1/customers/{customer} — 200
 
-**Success: same empty-data wrapper as create:** `{"success":true,"message":"","data":null}`. Do not serialize the updated customer resource.
+**Success: HTTP 200 with localized confirmation but no updated customer resource:**
+
+```json
+{
+  "success": true,
+  "message": "تم تعديل العميل بنجاح",
+  "data": null
+}
+```
+
+The controller must pass `__('customers.messages.updated')` to `ApiResponse::success()`. Define **تم تعديل العميل بنجاح** in Arabic and **Customer updated successfully.** in English; do not hard-code messages inside controllers/actions. Do not serialize the updated customer resource.
 
 Partial update: any submitted subset of `name`, `phone`, `address`, `customerTypeId`, `status`; omitted keys unchanged. `name`/`phone`/`customerTypeId`/`status` cannot be null if supplied, `address` may be null. Same phone/type/enum validation as creation, with own ID ignored for phone uniqueness. Example `{"name":"أحمد محمد علي","status":0}`.
 
@@ -300,7 +312,7 @@ Reuse existing Settings' `ParameterValueUsageRegistry` (do not duplicate it), Id
 7. Customer management endpoints enforce `auth:sanctum` and explicit create/view/update/delete permissions; unauthorized identities return 401/403.
 8. All validation/BusinessException text comes from `lang/ar/customers.php`, `lang/en/customers.php` (or the owning Settings language file); Arabic/English tests verify messages.
 9. Search and pagination conform to agreed QueryBuilder allowlists, and do not expose unsupported filters.
-9a. Create returns HTTP 201 and Update returns HTTP 200 with `success: true`, empty `message` and `data: null`, while GET endpoints still return complete Customer Resources.
+9a. Create returns HTTP 201 (`message: تم إضافة العميل بنجاح`) and Update returns HTTP 200 (`message: تم تعديل العميل بنجاح`) with `success: true` and `data: null`; GET endpoints still return complete Customer Resources. Verify both `ar` and `en` translation catalogs and responses.
 9b. Select keys `customers` and `activeCustomers` share `customers.selects.view`; the first contains active and inactive live customers, the second active only, both exclude Soft Deleted records, and both format labels as `name - phone`.
 10. No customer CRUD action posts Finance ledger entries implicitly or writes a denormalized account balance; opening debt/credit is a separate future Finance operation.
 11. ACTIVE → INACTIVE is rejected with a localized business conflict if Orders reports a **non-cancelled undelivered order**; **cancelled/delivered** orders do not block deactivation, but **all historical orders** block Soft Delete. Until Orders exists, the interface is a contract and must be wired before live order creation.
