@@ -69,3 +69,11 @@ php artisan route:list --path=api/v1/selects
 **Expected Settings test discovery: 178 tests, not yet freshly executed after these review changes.** Run new migrations and `SettingsDatabaseSeeder` against a disposable development database. Do not call these new tests passing until the developer reports their result.
 
 No merge to `develop` and no PR creation were performed during this review.
+
+
+### PrintingServices integration update (2026-10-22)
+
+- `ParameterValueUsageRegistry` now accepts **separate deletion and deactivation guard contracts**. The deactivation hook is evaluated only on ACTIVE → INACTIVE, while the Settings row is locked within UpdateParameterValueAction's DB transaction.
+- Pricing-tier references **do not block customer-type deactivation**; they continue to block Soft Delete, including historical price tiers. Customer assignments, not pricing-tier definitions, are the reason to block deactivation.
+- The future Customers module must register the implementation that checks current customer associations and coordinate writes using the same customer-type row lock. This is represented by test-only fake Customers guard coverage, **not an actual Customers module yet**.
+- Modules are permanent by project decision, so no module-disable lifecycle feature is being implemented.

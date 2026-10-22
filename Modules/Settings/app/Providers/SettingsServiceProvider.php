@@ -13,5 +13,6 @@ class SettingsServiceProvider extends ModuleServiceProvider
     protected array $providers = [
         RouteServiceProvider::class,
         SettingsSelectServiceProvider::class,
+        ParameterValueUsageServiceProvider::class,
     ];
 }

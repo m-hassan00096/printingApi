@@ -1,0 +1,9 @@
+{
+    "name": "PrintingServices",
+    "alias": "printing-services",
+    "description": "Tabaa printing service catalog and tiered pricing",
+    "keywords": [],
+    "priority": 0,
+    "providers": ["Modules\\PrintingServices\\Providers\\PrintingServicesServiceProvider"],
+    "files": []
+}

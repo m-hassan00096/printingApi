@@ -1,0 +1,78 @@
+name: Printing Services CI
+
+on:
+  push:
+    branches:
+      - feature/printing-services
+  pull_request:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  phpunit-sqlite:
+    name: PHPUnit (SQLite full regression)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, pdo_sqlite, sqlite3, pdo_mysql
+          tools: composer:v2
+          coverage: none
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Set test key
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+      - name: Run full test suite
+        run: php artisan test
+
+  mysql-invariants:
+    name: MySQL 8 (migrations, uniqueness, InnoDB locking)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: tabaa_printing_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_DATABASE: tabaa_printing_ci
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, pdo_mysql, pdo_sqlite, sqlite3
+          tools: composer:v2
+          coverage: none
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Set test key
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+      - name: Verify module migrations on MySQL
+        run: php artisan migrate:fresh --force
+      - name: Run MySQL-specific invariant tests
+        run: php artisan test --filter=MySqlDatabaseInvariantTest

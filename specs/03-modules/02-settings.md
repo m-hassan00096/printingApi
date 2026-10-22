@@ -233,6 +233,22 @@ Bank account defaults and wallet defaults form **independent sets**. Both sets n
 - No restore endpoint in v1. Deleted records are not included in normal management lists or selects.
 - `parameter_values` names remain reserved after Soft Delete within their group (approved SET-031). Bank-account numbers and wallet phones are also currently reserved by database unique indexes but **that policy is provisional** and pending owner approval (SET-OPEN-01).
 
+### 10.2.1 Modular parameter-value deletion checks (implemented on feature/printing-services)
+
+- The Settings `DeleteParameterValueAction` locks the `ParameterValue` row and calls its own `ParameterValueUsageRegistry` inside the same transaction.
+- The contract `Modules\\Settings\\Contracts\\ParameterValueUsageGuard` is owned by Settings. Other modules register implementations from their **own** Service Providers; Settings imports no PrintingServices classes and knows no price-tier tables.
+- PrintingServices registers `CustomerTypeUsageGuard`: for group `customer_types`, **any** price-tier row referring to this ID, including Soft Deleted rows and tiers of Soft Deleted services, blocks the customer-type Soft Delete with a translated 409 BusinessException. Unreferenced types and unrelated Settings groups retain the existing delete behavior.
+- PrintingServices locks referenced customer-type rows in sorted ID order **inside** service-create/service-update transactions to synchronize with the Settings delete check. Preview remains read-only.
+- **Approved deployment assumption:** the core application modules are permanent and are not disabled/unloaded in live deployments. Their providers and guards remain registered. No module disable workflow or extra fail-closed module manager is required. An ordinary FK does not prevent Soft Delete.
+### 10.2.2 Customer-type deactivation (approved implementation boundary)
+
+- A customer type with only PrintingServices pricing tiers **may become INACTIVE**; tier rows remain unchanged. Their customer-type IDs become ineligible for new selections and new tier writes/price previews until reactivation. If reactivated, existing tier rules are eligible again and staff should review them.
+- A customer type currently assigned to customers **must not become INACTIVE** (approved SET-013). This check belongs to the future **Customers** module; it will register `ParameterValueDeactivationGuard` with Settings' `ParameterValueUsageRegistry` from its own provider. Settings invokes deactivation guards during an ACTIVE → INACTIVE change, while holding a `lockForUpdate()` on the affected `parameter_values` row, in the same transaction as the status update.
+- The future Customers module must lock the same parameter-value row during customer creation/customer-type reassignment, then verify ACTIVE to prevent simultaneous assignment and deactivation races. Whether Soft Deleted customer histories count as current customers is still decided by Customers policy.
+- This deactivation extension is implemented and testable via a **test-only fake Customers guard**. The real customer-reference check cannot be active until Customers is implemented. Do not claim it is already implemented in production.
+- **Deletion remains stricter than deactivation:** any tier (live or Soft Deleted) blocks customer-type Soft Delete via the existing `CustomerTypeUsageGuard`.
+
+
 ### 10.3 Historical snapshots
 
 - **Orders:** type label and final agreed prices remain as they were at order creation/confirmation under Orders' domain contract.
@@ -346,7 +362,7 @@ The generic parameter-value **Index, Show, Create, Update and Soft Delete** endp
 - The index **requires** `parameterId` (exists in `parameters.id`); it supports `filter[search]` (searches `name` and `description` **only**), `filter[status]` (integer `0` or `1`), `page`, `perPage` (1–100, default 15), and `sort` (allowlist: `id`, `name`, `created_at`; default `-id`). The filter syntax follows Spatie QueryBuilder and the Identity users API. Other filters are rejected.
 - The collection uses `data.parameters` and `data.pagination` (`currentPage`, `lastPage`, `perPage`, `total`), and excludes soft-deleted rows by default. Show uses ParameterValueResource and does not require a `parameterId` query parameter.
 - Delete returns the normal `ApiResponse::success()` response (`200`, `data: null`), never hard-deletes, and permanently reserves the deleted name within its group. The prior section-specific create routes are **not** part of the API.
-- **Integration constraint:** historical-use checks for Customer/Production associations must be enforced before those modules expose their associations to these values. Current Settings has no Customer or Production usage relationships; the present Delete Action does **not** yet block deletion of historically referenced values.
+- **Integration constraint:** Settings now calls registered domain deletion guards, including PrintingServices' historical price-tier guard. Customer and Production references are not yet present; those future modules must contribute their own guards before exposing corresponding relationships. Settings also exposes a deactivation guard hook for Customers, but no real customer association checker exists yet.
 - Input validation (required fields, enum status, trimmed names and group-scoped uniqueness) belongs to StoreParameterValueRequest and UpdateParameterValueRequest, not duplicated in Actions. The update Action handles the transactional row-locked write; the create Action writes through the Parameter relationship.
 
 ### 12.2 Bank accounts and e-wallets — CRUD implemented (integration caveats below)
@@ -585,7 +601,7 @@ The following **proposed technical permissions** are owned by Settings and seede
 | `settings.e_wallets.delete` | Soft-delete eligible e-wallets. |
 | `settings.selects.view` | **Implemented:** read all four active Settings option sources (`printingLocations`, `customerTypes`, `bankAccounts`, `eWallets`) via the shared Selects API. |
 
-- The generic parameter-value Index/Show/Create/Update/Delete APIs and the separate bank/wallet Index/Show/Create/Update/Delete APIs are implemented, with permission checks per operation. The common `settings.selects.view` permission now registers all four keys (`printingLocations`, `customerTypes`, `bankAccounts`, `eWallets`) with the numeric `isDefault` extension on bank/wallet options only. Historic-use deletion checks await owning-module integration.
+- The generic parameter-value Index/Show/Create/Update/Delete APIs and separate bank/wallet management APIs are implemented, with permission checks. The common `settings.selects.view` permission registers all four keys. Parameter-value deletion and deactivation now have registration points for owning-module guards; PrintingServices' price-tier deletion guard is implemented, while Customers and Production usage checks await their own modules.
 - Neither `admin` role name nor frontend visibility alone grants permission to perform an operation.
 - A separate **Production-owned** permission governs administrator-only changes to an in-progress item's printing location; Settings `.update` is insufficient for changing production assignments.
 - Use parameterized/allowlisted filtering, safe database writes, CSRF-protected stateful API access and standard anti-leak handling. Payment destination account identifiers are not secret API keys but still must not be exposed to users without appropriate management authorization.

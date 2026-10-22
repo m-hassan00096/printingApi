@@ -1,3 +1,10 @@
+# Tabaa — Required Localization Convention
+
+- All user-facing or translatable text, including validation errors, business exceptions, and exception messages, **must be defined in Laravel language files** under `lang/ar/` and `lang/en/`. Do not hard-code Arabic or English messages inside controllers, actions, services, models, exceptions, requests, or registries.
+- In code, refer to messages with `__()` / `trans()` and a stable translation key belonging to the owning module (for example `__('printing_services.messages.tier_price_invalid')`).
+- Use translation placeholders and parameters for dynamic values (for example `__('settings.invalid_parameter_value_usage_guard', ['guard' => $guardClass])`), not string interpolation of translated copy.
+- Apply this rule to all new modules and any existing code touched during maintenance; provide both Arabic and English translations for new keys.
+
 <laravel-boost-guidelines>
 # Laravel Application
 
