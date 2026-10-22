@@ -5,6 +5,7 @@ namespace Modules\Settings\Tests\Feature\Seeders;
 require_once __DIR__.'/../ParameterValues/Support/ParameterValueTestCase.php';
 
 use Modules\Identity\Models\Permission;
+use Modules\Identity\Models\Role;
 use Modules\Settings\Database\Seeders\SettingsDatabaseSeeder;
 use Modules\Settings\Enums\ParameterValueStatus;
 use Modules\Settings\Models\BankAccount;
@@ -27,6 +28,19 @@ class SettingsDatabaseSeederTest extends ParameterValueTestCase
         $this->assertTrue(Permission::where('name', 'settings.e_wallets.delete')->exists());
         $this->assertSame(0, BankAccount::query()->count());
         $this->assertSame(0, EWallet::query()->count());
+    }
+
+    public function test_module_seeder_grants_settings_permissions_to_existing_admin_role(): void
+    {
+        $this->assertFalse($this->administrator->can('settings.selects.view'));
+
+        $this->seed(SettingsDatabaseSeeder::class);
+
+        $adminRole = Role::findByName('admin', 'web');
+        $this->assertTrue($adminRole->hasPermissionTo('settings.selects.view'));
+        $this->assertTrue($adminRole->hasPermissionTo('settings.bank_accounts.create'));
+        $this->assertTrue($adminRole->hasPermissionTo('settings.e_wallets.delete'));
+        $this->assertTrue($this->administrator->fresh()->can('settings.selects.view'));
     }
 
     public function test_module_seeder_is_idempotent_and_preserves_existing_values(): void
