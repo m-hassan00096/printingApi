@@ -57,7 +57,7 @@ class OrderFinanceController extends Controller
         $data = $request->validate(['reason' => ['required', 'string', 'min:3', 'max:3000']]);
         $key = $this->idempotencyKey($request);
 
-        DB::transaction(function () use ($order, $finance, $key, $data): void {
+        DB::transaction(function () use ($request, $order, $finance, $key, $data): void {
             $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
             if ($locked->status !== OrderStatus::CONFIRMED || $locked->delivered_at !== null) {
                 throw new OrdersBusinessException('cannot_cancel');
