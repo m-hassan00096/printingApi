@@ -34,9 +34,10 @@ class CustomerController extends Controller
 
     public function store(StoreCustomerRequest $request, CreateCustomerAction $action): JsonResponse
     {
-        $action->execute($request->validated());
+        $customer = $action->execute($request->validated());
 
         return ApiResponse::success(
+            data: (new CustomerResource($customer->load('customerType')))->resolve($request),
             message: __('customers.messages.created'),
             status: HttpStatusCode::CREATED,
         );

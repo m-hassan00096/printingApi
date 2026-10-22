@@ -13,10 +13,10 @@ class CreateCustomerAction
 {
     public function __construct(private readonly CustomerTypeAssignmentService $types) {}
 
-    public function execute(array $data): void
+    public function execute(array $data): Customer
     {
         try {
-            DB::transaction(function () use ($data): void {
+            return DB::transaction(function () use ($data): Customer {
                 $this->types->assertEligibleAndLock((int) $data['customerTypeId']);
 
                 $customer = new Customer();
@@ -24,6 +24,8 @@ class CreateCustomerAction
                 $customer->customer_type_id = (int) $data['customerTypeId'];
                 $customer->live_phone_hash = CustomerPhone::hash($customer->phone);
                 $customer->save();
+
+                return $customer;
             }, 3);
         } catch (UniqueConstraintViolationException $exception) {
             throw ValidationException::withMessages([

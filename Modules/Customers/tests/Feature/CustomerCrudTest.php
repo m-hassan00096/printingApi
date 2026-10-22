@@ -14,17 +14,33 @@ use Modules\Settings\Enums\ParameterValueStatus;
 
 class CustomerCrudTest extends CustomerTestCase
 {
-    public function test_create_returns_201_localized_message_and_null_data(): void
+    public function test_create_returns_201_localized_message_and_created_customer_resource(): void
     {
-        $this->postJson('/api/v1/customers', $this->payload([
+        $response = $this->postJson('/api/v1/customers', $this->payload([
             'name' => '  Ahmed Ali  ',
             'phone' => '  01012345678  ',
-        ]))->assertCreated()
+        ]));
+
+        $response->assertCreated()
             ->assertJsonPath('success', true)
             ->assertJsonPath('message', __('customers.messages.created'))
-            ->assertJsonPath('data', null);
+            ->assertJsonPath('data.name', 'Ahmed Ali')
+            ->assertJsonPath('data.phone', '01012345678')
+            ->assertJsonPath('data.address', null)
+            ->assertJsonPath('data.customerTypeId', $this->wholesale->id)
+            ->assertJsonPath('data.customerType.id', $this->wholesale->id)
+            ->assertJsonPath('data.customerType.name', 'Wholesale')
+            ->assertJsonPath('data.status', 1)
+            ->assertJsonPath('data.statusLabel', __('customers.status.active'));
+
+        $createdId = $response->json('data.id');
+        $this->assertIsInt($createdId);
+        $this->assertGreaterThan(0, $createdId);
+        $this->getJson('/api/v1/customers/'.$createdId)
+            ->assertOk()->assertJsonPath('data.id', $createdId);
 
         $this->assertDatabaseHas('customers', [
+            'id' => $createdId,
             'name' => 'Ahmed Ali',
             'phone' => '01012345678',
             'status' => 1,
