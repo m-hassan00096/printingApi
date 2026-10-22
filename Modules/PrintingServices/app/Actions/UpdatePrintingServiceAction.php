@@ -2,6 +2,7 @@
 
 namespace Modules\PrintingServices\Actions;
 
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Modules\PrintingServices\Enums\PriceTierActionStatus;
@@ -15,7 +16,8 @@ class UpdatePrintingServiceAction
 
     public function execute(PrintingService $service, array $data): PrintingService
     {
-        return DB::transaction(function () use ($service, $data): PrintingService {
+        try {
+            return DB::transaction(function () use ($service, $data): PrintingService {
             $locked = PrintingService::query()->whereKey($service->id)->lockForUpdate()->firstOrFail();
             $stored = $locked->priceTiers()->get()->keyBy('id');
             $final = [];
@@ -120,7 +122,12 @@ class UpdatePrintingServiceAction
             }
 
             return $locked->refresh()->load('priceTiers');
-        }, 3);
+            }, 3);
+        } catch (UniqueConstraintViolationException $exception) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'name' => 'The service name is already in use.',
+            ]);
+        }
     }
 }
 
