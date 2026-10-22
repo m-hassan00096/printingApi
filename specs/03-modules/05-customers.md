@@ -31,31 +31,45 @@ Customers owns the **registered customer profile**, current Settings customer-ty
 | CUS-008 | Customer account statements are chronological; a positive balance represents customer debt, negative is customer credit. Orders increase liability and posted collections decrease it. |
 | CUS-009 | Advance/direct general customer payments, historic debt, credit application and financial corrections belong to the **Finance/Orders integration**, not customer CRUD side effects. |
 | CUS-010 | Every customer/order/payment operation follows shared API conventions: camelCase JSON, exact decimal strings for money, and standardized success/error/pagination shapes. |
+| CUS-011 | Customer phone is **required and unique** across customer records; normalization format and deleted-phone reuse policy remain open. |
+| CUS-012 | Customer address is **optional** and is represented by one field for now. |
+| CUS-013 | Customer removal uses **Soft Delete**, allowed only if no Orders and no financial movements refer to the customer; future modules own the historical reference guards. |
 
 ## 3. Proposed minimal Customers v1 data model
 
-`customers` — **proposal**, pending field/uniqueness policy approval:
+`customers` — agreed core fields; **phone syntax and lifecycle details still pending**:
 
 | DB field | Role / proposed validation |
 |---|---|
 | `id` | BIGINT primary key |
 | `name` | Required string, trimmed, length limited by storage |
-| `phone` | Required contact number, normalized before lookup/persistence; uniqueness policy **not finalized** |
-| `address` | Customer address; whether empty is permitted needs final confirmation |
+| `phone` | **Required and unique** for each customer. Exact input/normalization policy (11-digit Egyptian mobile vs other formats) is pending. Enforce database uniqueness as well as validation. |
+| `address` | **Optional/nullable** customer address; one address field in v1. |
 | `customer_type_id` | Required foreign key to `parameter_values.id`, checked against active `customer_types` |
 | `created_by` / `updated_by` | Nullable audit actor FKs using existing shared trait |
-| `created_at` / `updated_at` / `deleted_at` | Standard timestamps and optional Soft Delete, subject to reference restrictions |
+| `created_at` / `updated_at` / `deleted_at` | Standard timestamps and **Soft Delete**. Deletion is permitted **only when no Orders and no posted financial movements have ever referenced this customer**. Those modules own the reference guards when built. |
 
 No extra personal fields, company/tax entities, contact persons, multiple addresses, images, or customer self-login without a separate decision. Do not add `balance`, `credit`, `old_debt`, or `opening_balance` writable customer columns.
 
 ### Pending data decisions — do not silently assume
 
-- **CUS-OPEN-01:** Is `phone` unique across customers, and what normalizing/format policy applies (Egypt-only versus international numbers)?
-- **CUS-OPEN-02:** Is `address` required, optional or nullable? Are multiple phones/addresses needed? The current approved minimum is one phone and address.
-- **CUS-OPEN-03:** Are customers soft-deletable if never referenced, and what references (Orders, Finance ledger, historic activity) prohibit deletion? A soft-deleted customer must not break snapshots.
-- **CUS-OPEN-04:** Is a customer `status` (ACTIVE/INACTIVE) needed in addition to Soft Delete? Do not invent it from Settings' status enum.
-- **CUS-OPEN-05:** What can staff filter/search by (name, phone, type, status), and is type filtering needed on first release? QueryBuilder must use an explicit allowlist.
+- **CUS-OPEN-01:** **Unique phone approved.** Remaining: confirm accepted formats/normalization (Egyptian mobile 11 digits or other formats) and whether a Soft Deleted customer's number stays reserved or can be reused.
+- **CUS-OPEN-02:** **Optional single address approved.** A single required phone is approved for v1; no multiple contact fields are requested.
+- **CUS-OPEN-03:** **Resolved core policy:** customer is Soft Deleted **only if never linked to Orders or financial movements**. The real Orders/Finance guards are deferred to those modules. Remaining: uniqueness reservation for deleted phone numbers and whether any other historic references count.
+- **CUS-OPEN-04:** The UI explicitly includes a checked **الحساب فعال** control in create/edit and a status column. Confirm lifecycle semantics: default ACTIVE, effect of INACTIVE on new orders, and whether existing collections/edits remain allowed.
+- **CUS-OPEN-05:** UI list search says name, phone or customer type. Confirm whether unified search covers all three and whether separate status/type filters should be provided. QueryBuilder must use an explicit allowlist.
 - **CUS-OPEN-06:** Does opening account debt/credit get entered during registration or as a separate authorized Finance action? In either case it must become a **Finance ledger movement**, not a mutable Customer column.
+
+## 3.1 UI reference — owner's six screenshots, 2026-10-22
+
+The screenshots are requirements references, not evidence that dependent Orders/Finance APIs currently exist:
+
+- **Customers listing (now):** name, phone, optional address, customer type, active/inactive status, view/edit actions, new customer modal, and search. The displayed **order count** and **account balance** are **later integrations**, not columns managed by Customers.
+- **Customer create/edit modals (now):** required name/phone, optional address, required Settings customer type, and an **الحساب فعال** checkbox (semantics still to approve).
+- **Customer details profile tab (now):** read-only profile plus edit modal; tabs for orders and account statement may be represented in the frontend later but must not trigger placeholder backend implementations.
+- **Customer orders tab (later Orders):** order numbers, dates, item counts, totals and production/delivery status are read from Orders-owned data.
+- **Finance cards and statement tab (later Finance):** total liabilities, collections/settlements, current debt, credit, chronological debit/credit movements and running balance are Finance-owned calculated/posted values, **not writable fields on customers**. The new-collection button is Finance functionality.
+- Customers v1 **must not invent** dummy financial balances, ledger entries, order counts, orders tables or collection endpoints just to mimic the visual design.
 
 ## 4. Settings integration — implement in Customers
 
