@@ -13,13 +13,16 @@ class CustomerLocalizationTest extends CustomerTestCase
             app()->setLocale($locale);
             $phone = $locale === 'ar' ? '01000000001' : '01000000002';
 
-            $this->postJson('/api/v1/customers', $this->payload([
+            $create = $this->postJson('/api/v1/customers', $this->payload([
                 'phone' => $phone,
-            ]))->assertCreated()
-                ->assertJsonPath('message', __('customers.messages.created'))
-                ->assertJsonPath('data', null);
+            ]));
 
-            $customer = \Modules\Customers\Models\Customer::query()->where('phone', $phone)->firstOrFail();
+            $create->assertCreated()
+                ->assertJsonPath('message', __('customers.messages.created'))
+                ->assertJsonPath('data.phone', $phone)
+                ->assertJsonPath('data.statusLabel', __('customers.status.active'));
+
+            $customer = \Modules\Customers\Models\Customer::query()->findOrFail($create->json('data.id'));
             $this->patchJson($this->url($customer), ['name' => 'Renamed'])
                 ->assertOk()
                 ->assertJsonPath('message', __('customers.messages.updated'))
