@@ -3,7 +3,7 @@
 > **Project:** طَبعة / Tabaa  
 > **Branch:** `feature/customers`  
 > **Target:** `develop`  
-> **Status:** Owner-approved lifecycle/field decisions and concrete v1 API contracts documented; implementation in progress on `feature/customers`. `05-customers.md` is the module requirements artifact.   
+> **Status:** Owner-reviewed business rules and API contract being finalized on `feature/customers`. No Customers code implementation or tests have been committed yet; `05-customers.md` is the module requirements artifact.  
 > **Stack:** Laravel 13 API, MySQL, nwidart/laravel-modules, stateful Sanctum, Spatie Permissions, Spatie Query Builder.  
 > **Language convention:** All translatable/error/validation messages belong in `lang/ar/customers.php` and `lang/en/customers.php`; use translation keys only in code.
 
@@ -46,6 +46,8 @@ Customers owns the **registered customer profile**, current Settings customer-ty
 | CUS-023 | **Phone equality uses the trimmed input as-is**, without stripping internal spaces, hyphens or prefixes. For example, `01012345678` and `010 12345678` are **distinct** values. Database uniqueness and server validation must follow the same comparison policy. |
 | CUS-024 | A **Soft Deleted customer with no Orders or financial movements** does not alone prevent Soft Deleting their former Settings customer type. **Current customers** and other surviving/historical references (e.g. PrintingServices price tiers) must still be checked by their respective guards. |
 | CUS-025 | An **opening customer debt or credit** is recorded as a **separate Finance operation**, never in customer registration/update. The eventual Finance ledger owns the opening movement and its authorization; Customers CRUD has no opening-balance input or money side effects. |
+| CUS-026 | Customer **create/update endpoints return no customer resource**. The ApiResponse wrapper still returns `data: null`; POST 201 and PUT/PATCH 200. Reading full records uses GET endpoints. |
+| CUS-027 | Shared Select Aggregator exposes **two independent keys**: `customers` (all non-Soft Deleted customers, both ACTIVE and INACTIVE) and `activeCustomers` (only ACTIVE non-Soft Deleted customers), both with `label = customer name + " - " + phone` and `value = customer ID`. Both keys are controlled by `customers.selects.view`. |
 
 ## 3. Proposed minimal Customers v1 data model
 
@@ -126,7 +128,7 @@ All routes use `auth:sanctum` and explicit Spatie permissions, with camelCase re
 | `PUT/PATCH /api/v1/customers/{customer}` | Update profile and type | `customers.update` |
 | `DELETE /api/v1/customers/{customer}` | Only if the finalized historic-use policy permits | `customers.delete` |
 
-Use existing Select Aggregator for active customer options; register from Customers provider with a dedicated read permission if one is required, rather than creating a separate Selects module. Define whether inactive/soft-deleted customers should be selectable after CUS-OPEN-03/04.
+Register both `customers` (all non-deleted) and `activeCustomers` (active-only) in the existing Select Aggregator from Customers' provider, with shared dedicated permission `customers.selects.view`. Both labels combine name and phone. Soft Deleted customers appear in neither.
 
 **Do not create `POST /customers/{id}/payments` or mutate balances in this module.** A later `GET /api/v1/customers/{customer}/ledger` can expose Finance-owned read-only data once Finance is built, with a separate permission and no fake entries.
 
@@ -136,7 +138,7 @@ Use existing Select Aggregator for active customer options; register from Custom
 
 ### Authentication and permissions
 
-Every Customers management endpoint is under `auth:sanctum`, with `customers.view`, `customers.create`, `customers.update`, `customers.delete` respectively. The shared selects aggregator exposes `customers` with `customers.selects.view`. No implicit super-admin bypass; Identity RoleSeeder syncs seeded web permissions.
+Every Customers management endpoint is under `auth:sanctum`, with `customers.view`, `customers.create`, `customers.update`, `customers.delete` respectively. The shared selects aggregator exposes **both** `customers` and `activeCustomers`, using the same `customers.selects.view` permission for each. No implicit super-admin bypass; Identity RoleSeeder syncs seeded web permissions.
 
 All responses match the app's `ApiResponse` wrapper. Success: `{"success":true,"message":"","data":...}`. Validation: HTTP **422**, `{"success":false,"message":"...","errors":{"field":["..."]}}`; restricted business action: HTTP **409**, same error wrapper; unauthorized **401**; forbidden **403**; unknown or Soft Deleted customer **404**. All messages live in `lang/ar/customers.php` and `lang/en/customers.php`.
 
@@ -156,24 +158,17 @@ Request (camelCase):
 
 `name` required nonblank trimmed string (up to 150 chars); duplicates allowed. `phone` required nonblank trimmed string (up to 100 chars), **unique among live customers** based on the exact trimmed string, with no stripping interior whitespace, case folding or locale-specific phone regex; its exact uniqueness is enforced at DB level and duplicate returns 422 field `phone`. `address` optional nullable string, up to 1000 chars; omitted becomes null. `customerTypeId` required positive integer from the **active and not-deleted** Settings `customer_types` group; update/creation revalidates it while holding the type's DB lock. `status` required integer enum `0=INACTIVE, 1=ACTIVE`, **provided by frontend**, no backend default. Snake_case aliases are not accepted.
 
-Success returns Customer Resource. Example:
+**Success: HTTP 201 with no returned customer resource.** The API retains the standard response wrapper:
 
 ```json
 {
   "success": true,
   "message": "",
-  "data": {
-    "id": 15,
-    "name": "أحمد محمد",
-    "phone": "01012345678",
-    "address": "المنصورة",
-    "customerTypeId": 2,
-    "customerType": {"id": 2, "name": "عميل جملة"},
-    "status": 1,
-    "statusLabel": "فعال"
-  }
+  "data": null
 }
 ```
+
+If the frontend needs the newly created customer's full details, it must fetch them through a read endpoint (rather than relying on the create response). The API does **not** return the new ID in `data` under this contract.
 
 ### GET /api/v1/customers — 200
 
@@ -210,6 +205,8 @@ Returns the same Customer Resource inside `data`. Eager-load customer type to pr
 
 ### PUT/PATCH /api/v1/customers/{customer} — 200
 
+**Success: same empty-data wrapper as create:** `{"success":true,"message":"","data":null}`. Do not serialize the updated customer resource.
+
 Partial update: any submitted subset of `name`, `phone`, `address`, `customerTypeId`, `status`; omitted keys unchanged. `name`/`phone`/`customerTypeId`/`status` cannot be null if supplied, `address` may be null. Same phone/type/enum validation as creation, with own ID ignored for phone uniqueness. Example `{"name":"أحمد محمد علي","status":0}`.
 
 - An inactive customer remains editable, including name, phone and type. Historical Orders/Finance facts and name snapshots cannot be rewritten by customer updates.
@@ -222,9 +219,42 @@ Soft Delete only if Orders and Finance usage registries report no historical ref
 
 Success: `{"success":true,"message":"","data":null}`. A prohibited deletion -> localized 409, and the row/phone remains active. A permitted Soft Delete nulls the live-only phone hash and frees the original phone while keeping historical row metadata.
 
-### GET /api/v1/selects?selects=customers
+### GET /api/v1/selects?selects=customers,activeCustomers
 
-Extend the existing authorized shared Select Aggregator (no extra Customers select endpoint). Select key `customers`, permission `customers.selects.view`, active/not-deleted records only; optional `params[customers]=active` is accepted consistent with other select providers. Response uses existing Select Aggregator shape, with choices of `{"value":15,"label":"أحمد محمد"}`. Duplicate display labels can occur by approved business decision; client always submits `value` ID.
+Use the **existing authorized shared Select Aggregator**; do not create separate Customers-select routes.
+
+| Key | Dataset | Permission |
+|---|---|---|
+| `customers` | **All non-Soft Deleted customers:** ACTIVE and INACTIVE | `customers.selects.view` |
+| `activeCustomers` | **Only ACTIVE**, non-Soft Deleted customers | `customers.selects.view` |
+
+Both produce option objects with the **customer name and phone together**, to distinguish duplicate names: `{"value":15,"label":"أحمد محمد - 01012345678"}`. `value` is always the numeric customer ID. Sort by name then ID consistently. No `params[customers]=active` is needed; request `activeCustomers` to get the active-only set.
+
+The existing Select Aggregator returns a list of `{label,options}` groups, each identified by its key:
+
+```json
+{
+  "success": true,
+  "message": "",
+  "data": [
+    {
+      "label": "customers",
+      "options": [
+        {"value": 15, "label": "أحمد محمد - 01012345678"},
+        {"value": 16, "label": "منى علي - 01111111111"}
+      ]
+    },
+    {
+      "label": "activeCustomers",
+      "options": [
+        {"value": 15, "label": "أحمد محمد - 01012345678"}
+      ]
+    }
+  ]
+}
+```
+
+The values above are illustrative, with customer 16 assumed INACTIVE; neither group contains Soft Deleted records. **Use `activeCustomers` for new Order entry**; `customers` is available for administrative workflows and historical collections where an inactive customer must remain selectable. Both selects are read-only and never imply that inactive customers can receive new Orders.
 
 ### Cross-module contracts to implement now / later
 
@@ -270,6 +300,8 @@ Reuse existing Settings' `ParameterValueUsageRegistry` (do not duplicate it), Id
 7. Customer management endpoints enforce `auth:sanctum` and explicit create/view/update/delete permissions; unauthorized identities return 401/403.
 8. All validation/BusinessException text comes from `lang/ar/customers.php`, `lang/en/customers.php` (or the owning Settings language file); Arabic/English tests verify messages.
 9. Search and pagination conform to agreed QueryBuilder allowlists, and do not expose unsupported filters.
+9a. Create returns HTTP 201 and Update returns HTTP 200 with `success: true`, empty `message` and `data: null`, while GET endpoints still return complete Customer Resources.
+9b. Select keys `customers` and `activeCustomers` share `customers.selects.view`; the first contains active and inactive live customers, the second active only, both exclude Soft Deleted records, and both format labels as `name - phone`.
 10. No customer CRUD action posts Finance ledger entries implicitly or writes a denormalized account balance; opening debt/credit is a separate future Finance operation.
 11. ACTIVE → INACTIVE is rejected with a localized business conflict if Orders reports a **non-cancelled undelivered order**; **cancelled/delivered** orders do not block deactivation, but **all historical orders** block Soft Delete. Until Orders exists, the interface is a contract and must be wired before live order creation.
 12. A customer with no Orders/Finance references can be Soft Deleted, releasing the phone. Its old Settings customer-type relation by itself does not block type Soft Delete, while a current customer or Pricing-tier relation still does.
