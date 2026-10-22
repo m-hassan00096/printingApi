@@ -46,7 +46,12 @@ class StorePrintingServiceRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function (Validator $validator): void {
-            foreach ($this->input('priceTiers', []) as $index => $tier) {
+            $tiers = $this->input('priceTiers', []);
+            if (! is_array($tiers)) {
+                return;
+            }
+
+            foreach ($tiers as $index => $tier) {
                 if (is_array($tier)) {
                     $this->checkTierFields($validator, $tier, $index, false);
                 }
