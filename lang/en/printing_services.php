@@ -13,6 +13,7 @@ return [
         'tier_id_required' => 'A valid price tier ID is required when updating or deleting.',
         'duplicate_tier_command' => 'The same price tier cannot appear more than once in the update request.',
         'tier_not_found' => 'The price tier does not exist or does not belong to this service.',
+        'customer_type_in_use' => 'This customer type cannot be deleted because it is used in printing service price tiers.',
         'customer_type_invalid' => 'The customer type does not exist or is not active in Settings customer types.',
         'quantity_range_invalid' => 'The quantity range is invalid.',
         'duplicate_catch_all' => 'Only one any-quantity tier is allowed per customer type.',

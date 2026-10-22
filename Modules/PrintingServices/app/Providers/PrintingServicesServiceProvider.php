@@ -13,6 +13,7 @@ class PrintingServicesServiceProvider extends ModuleServiceProvider
     protected array $providers = [
         RouteServiceProvider::class,
         PrintingServicesSelectServiceProvider::class,
+        PrintingServicesParameterValueServiceProvider::class,
     ];
 }
 
