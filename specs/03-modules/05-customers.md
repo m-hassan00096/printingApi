@@ -34,6 +34,10 @@ Customers owns the **registered customer profile**, current Settings customer-ty
 | CUS-011 | Customer phone is **required and unique** across customer records; normalization format and deleted-phone reuse policy remain open. |
 | CUS-012 | Customer address is **optional** and is represented by one field for now. |
 | CUS-013 | Customer removal uses **Soft Delete**, allowed only if no Orders and no financial movements refer to the customer; future modules own the historical reference guards. |
+| CUS-014 | Customer **status is supplied by the frontend** on creation and is persisted as an integer-backed ACTIVE/INACTIVE enum; do not silently assign default ACTIVE when status is omitted. Business effects of INACTIVE remain to be confirmed. |
+| CUS-015 | Customer phone **format is unrestricted** in v1: treat it as trimmed text with a reasonable storage length, without Egypt-only mobile, international-dialing or landline regex. Phone uniqueness remains enforced. |
+| CUS-016 | A Soft Deleted customer **releases its phone** for reuse by another live customer; live rows with the same trimmed phone remain prohibited via DB uniqueness and validation. |
+| CUS-017 | Customer listing has one **name-or-phone** search, plus separate customer-type and status filters. Customer-type name is *not* part of free-text search. |
 
 ## 3. Proposed minimal Customers v1 data model
 
@@ -43,9 +47,10 @@ Customers owns the **registered customer profile**, current Settings customer-ty
 |---|---|
 | `id` | BIGINT primary key |
 | `name` | Required string, trimmed, length limited by storage |
-| `phone` | **Required and unique** for each customer. Exact input/normalization policy (11-digit Egyptian mobile vs other formats) is pending. Enforce database uniqueness as well as validation. |
+| `phone` | **Required and unique among non-Soft Deleted customers**, trimmed text with no country-specific regex; reuse after Soft Delete allowed. Enforce live-only uniqueness in MySQL, not validation alone. Avoid telephone-to-integer casting or stripping leading zero / `+`. |
 | `address` | **Optional/nullable** customer address; one address field in v1. |
 | `customer_type_id` | Required foreign key to `parameter_values.id`, checked against active `customer_types` |
+| `status` | Required integer-backed ACTIVE/INACTIVE enum (`1`/`0`) supplied by the frontend in create requests, not automatically defaulted. Status effects on new orders remain an explicit pending decision. |
 | `created_by` / `updated_by` | Nullable audit actor FKs using existing shared trait |
 | `created_at` / `updated_at` / `deleted_at` | Standard timestamps and **Soft Delete**. Deletion is permitted **only when no Orders and no posted financial movements have ever referenced this customer**. Those modules own the reference guards when built. |
 
@@ -53,19 +58,19 @@ No extra personal fields, company/tax entities, contact persons, multiple addres
 
 ### Pending data decisions — do not silently assume
 
-- **CUS-OPEN-01:** **Unique phone approved.** Remaining: confirm accepted formats/normalization (Egyptian mobile 11 digits or other formats) and whether a Soft Deleted customer's number stays reserved or can be reused.
+- **CUS-OPEN-01 — Resolved:** phone is unique among live customers, accepts unrestricted text format (trim input; no Egyptian/international regex) and can be reused after Soft Delete. Persist as string; never cast to numeric. Database constraint must enforce live-only uniqueness even on MySQL.
 - **CUS-OPEN-02:** **Optional single address approved.** A single required phone is approved for v1; no multiple contact fields are requested.
-- **CUS-OPEN-03:** **Resolved core policy:** customer is Soft Deleted **only if never linked to Orders or financial movements**. The real Orders/Finance guards are deferred to those modules. Remaining: uniqueness reservation for deleted phone numbers and whether any other historic references count.
-- **CUS-OPEN-04:** The UI explicitly includes a checked **الحساب فعال** control in create/edit and a status column. Confirm lifecycle semantics: default ACTIVE, effect of INACTIVE on new orders, and whether existing collections/edits remain allowed.
-- **CUS-OPEN-05:** UI list search says name, phone or customer type. Confirm whether unified search covers all three and whether separate status/type filters should be provided. QueryBuilder must use an explicit allowlist.
+- **CUS-OPEN-03 — Resolved:** customer is Soft Deleted **only if never linked to Orders or financial movements**; its phone becomes available after Soft Delete. Real Orders/Finance usage guards are deferred to those modules, and must be implemented before those modules persist references.
+- **CUS-OPEN-04 — Partially resolved:** status is explicitly submitted by frontend on create and is stored as an integer enum; do not assume backend default ACTIVE. Still confirm what INACTIVE does to new Orders and historical Finance collections, as well as whether inactive customers remain editable/viewable.
+- **CUS-OPEN-05 — Resolved:** `filter[search]` matches customer name OR phone only. `filter[customerTypeId]` and `filter[status]` are separate filters; do not search customer-type name via text. QueryBuilder must allowlist only supported filters.
 - **CUS-OPEN-06:** Does opening account debt/credit get entered during registration or as a separate authorized Finance action? In either case it must become a **Finance ledger movement**, not a mutable Customer column.
 
 ## 3.1 UI reference — owner's six screenshots, 2026-10-22
 
 The screenshots are requirements references, not evidence that dependent Orders/Finance APIs currently exist:
 
-- **Customers listing (now):** name, phone, optional address, customer type, active/inactive status, view/edit actions, new customer modal, and search. The displayed **order count** and **account balance** are **later integrations**, not columns managed by Customers.
-- **Customer create/edit modals (now):** required name/phone, optional address, required Settings customer type, and an **الحساب فعال** checkbox (semantics still to approve).
+- **Customers listing (now):** name, phone, optional address, customer type, active/inactive status, view/edit actions, new customer modal, name-or-phone search, customer-type filter and status filter. The displayed **order count** and **account balance** are **later integrations**, not columns managed by Customers.
+- **Customer create/edit modals (now):** required name/phone and current customer type, optional address, and required explicit frontend `status` (ACTIVE/INACTIVE); the checkbox supplies the value, while the rule for inactive customers and new orders is still pending.
 - **Customer details profile tab (now):** read-only profile plus edit modal; tabs for orders and account statement may be represented in the frontend later but must not trigger placeholder backend implementations.
 - **Customer orders tab (later Orders):** order numbers, dates, item counts, totals and production/delivery status are read from Orders-owned data.
 - **Finance cards and statement tab (later Finance):** total liabilities, collections/settlements, current debt, credit, chronological debit/credit movements and running balance are Finance-owned calculated/posted values, **not writable fields on customers**. The new-collection button is Finance functionality.
