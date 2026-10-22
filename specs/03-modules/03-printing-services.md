@@ -87,6 +87,9 @@ The following are decisions made in the Printing Services discussion; they must 
 | PS-027 | The pricing preview API accepts **customerTypeId**, not customerId; Orders must derive the actual customer's type from server-trusted customer data. |
 | PS-028 | Price-tier management belongs to **service/product management permissions**; no separate tier create/update/delete permissions. |
 | PS-029 | Uniqueness of live service names is **case-sensitive**. For example, Business Cards and business cards are distinct, while two live copies of Business Cards are not permitted. |
+| PS-030 | All service prices and amounts are denominated in **Egyptian pounds (EGP)** only; no per-service currency choice or currency-conversion logic in v1. |
+| PS-031 | The business does **not impose arbitrary maximum quantity, unit-price or line-total limits**; staff may enter values up to the actual validated numeric/storage limits. All quantities remain positive integers, prices remain two-decimal money amounts, and arithmetic/storage overflow must be rejected explicitly. |
+| PS-032 | Normalize service names on create and update: trim outer whitespace and **collapse runs of two or more whitespace characters between words to a single ordinary space**; preserve letter case. The normalized name is stored and used for case-sensitive live uniqueness checks. |
 
 ### Clarifications from these decisions
 
@@ -94,21 +97,24 @@ The following are decisions made in the Printing Services discussion; they must 
 - PS-011 and PS-012 are **not contradictory**: the sole unconstrained catch-all tier is a deliberate fallback exception to the overlap restriction.
 - A customer-specific catch-all may be selected **before** a generic quantity-specific tier. This is deliberate customer-type-first priority.
 - A zero suggested total is **not** the same as a missing suggested total. Never use truthiness checks or silently convert null into zero.
+- All amounts are **EGP** with two fractional digits. The application must not invent a business maximum; numeric database capacity and safe arithmetic still bound representable values.
+- Service names are normalized before persistence **and** duplicate checking: leading/trailing whitespace is removed and multiple whitespace characters between words become one normal space, without changing letter case.
 
 ## 4. Printing service definition
 
 | Public/API field | Meaning | Required on create | Business validation |
 |---|---|---|---|
-| name | Display name for the service | Yes | Nonempty trimmed string; unique among non-deleted services. |
-| basePrice | Optional base **unit** price | No | Null or decimal monetary amount >= 0 with at most two decimal places. |
+| name | Display name for the service | Yes | Required, trim outer whitespace and collapse repeated internal whitespace to one space; case-sensitive unique among live services. |
+| basePrice | Optional base **unit** price | No | Null or nonnegative decimal EGP amount with max two fractional digits; no arbitrary business ceiling, but subject to safe DB decimal capacity. |
 | status | Service availability | Yes, proposed consistent with Settings | Integer-backed active (1) or inactive (0). |
 | priceTiers | Child tier definitions | No | Zero or more entries; validated per §5 and §6. |
 
 - A service may exist without any tiers.
 - A service may exist with basePrice=null and no tiers, and still be available for manual-price order entry.
 - Inactive services remain visible in authorized management lists but must not be selectable for **new** order lines.
-- Service names are trimmed before uniqueness validation and compared **case-sensitively**. The names Business Cards and business cards are distinct; a duplicate with exactly matching case is not allowed among live records.
-- Request validation and database uniqueness must both be case-sensitive, regardless of the database default collation. Repeated internal whitespace and Unicode normalization details remain open in §19.
+- Normalize service names before validation and saving: trim leading/trailing whitespace and collapse every run of repeated whitespace between words to exactly one ordinary ASCII space. Reject names that become blank after normalization.
+- Compare normalized names **case-sensitively**: Business Cards and business cards may coexist, but `  Business    Cards  ` normalizes to `Business Cards` and duplicates the live `Business Cards` service.
+- Apply the **same normalization on create and update**, and ensure database live-only unique enforcement agrees with validation. Unicode canonical-equivalence handling (NFC/NFD) remains a separate implementation detail (§19).
 - Existing saved order lines continue to display the name captured when they were created, even after catalog rename or service deactivation.
 - Do not add printing locations, customer types, or account details directly to service records.
 
@@ -119,7 +125,7 @@ The following are decisions made in the Printing Services discussion; they must 
 | customerTypeId | Settings customer type, or null for all types | No | Null or a valid parameter_values ID belonging specifically to customer_types. |
 | minQuantity | Lower inclusive quantity bound | No | Null or positive integer >= 1. |
 | maxQuantity | Upper inclusive quantity bound | No | Null or positive integer >= 1. |
-| price | Unit price to apply when this tier wins | Yes | Decimal **> 0**, max two decimal places. |
+| price | Unit price to apply when this tier wins | Yes | Positive EGP decimal **> 0**, max two decimal places; no artificial business maximum, with storage-overflow checks. |
 
 These tiers belong to a service; they are not standalone products and do not have a separate pricing-mode selector. There is **no per-tier active/inactive switch** in the approved input; Soft Delete removes a tier from future matches.
 
@@ -221,7 +227,8 @@ If the basePrice is zero and there is no matching tier, proposed total is precis
 ## 8. Monetary calculation and manual overrides
 
 - Quantity is a positive integer.
-- Prices are decimal quantities with two fractional digits; do not calculate monetary totals using binary floating-point math.
+- All monetary amounts are **EGP** with two fractional digits. Do not calculate monetary totals using binary floating-point math.
+- **No business-defined numeric upper bound** on order quantity, unit price or line total is imposed; use positive integer and safe decimal validation. Reject values outside the actual database field range or arithmetic output capacity with a controlled 422 rather than truncating, wrapping or relying on a SQL exception.
 - A matched tier **unit price** is multiplied by the entire quantity. These are not stepped or marginal pricing bands.
 - proposedTotal = quantity × proposedUnitPrice, rounded/represented to two decimal places using the project's agreed money handling.
 - Order staff may override the proposed **total** manually, without modifying the service basePrice or tier records.
@@ -288,7 +295,7 @@ Important distinctions:
 
 ## 11. Proposed relational schema (for design review)
 
-**These are proposed table/column contracts, not implemented migrations.** MySQL is the project target. Keep data relational; do not store variable tiers in a JSON column.
+**These are proposed table/column contracts, not implemented migrations.** MySQL is the project target. Keep data relational; do not store variable tiers in a JSON column. **No arbitrary business maximum** applies to numeric amounts/quantities, but all concrete numeric column types have finite storage capacity. Determine and verify a sufficiently large DECIMAL(P,2) precision, integer range and total-price multiplication limit before migrations; return validation errors rather than overflowing.
 
 ### 11.1 printing_services
 
@@ -296,13 +303,13 @@ Important distinctions:
 |---|---|---|
 | id | BIGINT UNSIGNED | Primary key |
 | name | VARCHAR(150) | Required service name |
-| base_price | DECIMAL(14,2) NULL | Nullable, may be 0.00 |
+| base_price | DECIMAL(P,2) NULL (precision P to be selected) | Nullable, may be 0.00, EGP only; choose sufficiently wide precision from real DB arithmetic requirements, not an invented business maximum |
 | status | TINYINT | Active=1, Inactive=0 |
 | created_by / updated_by | Nullable FKs to users | Reuse existing audit-column convention, if applicable |
 | created_at / updated_at | TIMESTAMP | Standard timestamps |
 | deleted_at | TIMESTAMP NULL | Soft Delete |
 
-**Critical MySQL uniqueness requirement:** a simple UNIQUE(name) incorrectly prevents name reuse after Soft Delete. A simple UNIQUE(name, deleted_at) also **does not** enforce uniqueness among live rows in MySQL because multiple NULL values are allowed. Implement a reviewed **live-only, case-sensitive** unique key, for example a generated column containing the trimmed name only while deleted_at IS NULL with a unique index using a case-sensitive/binary-compatible collation supported by the target MySQL version. Different capitalization must coexist, identical names must not, and deleted names must be reusable. Verify actual collation semantics for whitespace/Unicode before migration. Database constraint and application validation must agree and be tested under concurrent creation.
+**Critical MySQL uniqueness requirement:** a simple UNIQUE(name) incorrectly prevents name reuse after Soft Delete. A simple UNIQUE(name, deleted_at) also **does not** enforce uniqueness among live rows in MySQL because multiple NULL values are allowed. Implement a reviewed **live-only, case-sensitive** unique key, for example a generated column containing the trimmed name only while deleted_at IS NULL with a unique index using a case-sensitive/binary-compatible collation supported by the target MySQL version. Different capitalization must coexist, identical names must not, and deleted names must be reusable. Normalize outer and repeated internal whitespace **before writing the stored name and the generated live-only index value**, using the same normalization on updates. Verify case-sensitive collation and any Unicode canonical-equivalence treatment before migration. Database constraint and application validation must agree and be tested under concurrent creation.
 
 ### 11.2 printing_service_price_tiers (working name)
 
@@ -313,7 +320,7 @@ Important distinctions:
 | customer_type_id | BIGINT UNSIGNED FK NULL | Settings parameter_values.id; null = all types |
 | min_quantity | BIGINT UNSIGNED NULL | Inclusive lower quantity |
 | max_quantity | BIGINT UNSIGNED NULL | Inclusive upper quantity |
-| price | DECIMAL(14,2) | Strictly positive unit price |
+| price | DECIMAL(P,2) (precision P to be selected) | Strictly positive EGP unit price, with two decimal digits |
 | created_by / updated_by | Nullable FKs to users | Audit metadata, if applicable |
 | created_at / updated_at | TIMESTAMP | Standard timestamps |
 | deleted_at | TIMESTAMP NULL | Soft Delete |
@@ -451,9 +458,9 @@ Whether an order-entry-specific select should include service base price or curr
 
 ## 15. Validation, errors and authorization semantics
 
-- Reject missing/blank service name, duplicate live names, invalid status, invalid basePrice, and extra unsupported pricing-mode/package fields according to the public API contract.
-- Reject price tier price null, 0, negative, non-numeric values or more than two decimal places.
-- Reject negative, fractional and zero quantities/bounds; reject minQuantity > maxQuantity.
+- Normalize service names by trimming outer whitespace and collapsing internal consecutive whitespace into one space on both create/update; reject names blank after normalization or duplicating an existing **case-sensitive normalized** live name. Reject invalid status, invalid basePrice and unsupported pricing-mode/package fields.
+- Reject price tier price null, 0, negative, non-numeric values or more than two decimal places. All money amounts are EGP; do not add a currency selector. Validate database representability and safe multiplication rather than inventing a business maximum.
+- Reject negative, fractional and zero quantities/bounds; reject minQuantity > maxQuantity. Do not impose an arbitrary maximum quantity; reject values exceeding the chosen integer representation.
 - Reject overlapping constrained ranges **within the same service and customer-type bucket**.
 - Reject a second live catch-all in the same bucket.
 - Reject customerTypeId belonging to printing_locations, another group, an inactive/deleted type or an unknown value.
@@ -505,17 +512,15 @@ The management permissions above reflect the agreed boundaries. Selector and pre
 
 ## 19. Remaining open decisions and proposed defaults — not owner-approved
 
-The owner has **closed PS-OPEN-01, PS-OPEN-04, PS-OPEN-05, and PS-OPEN-09** by PS-025 through PS-028; the case-sensitivity portion of PS-OPEN-11 is closed by PS-029. Decisions below remain pending, including the still-unresolved whitespace/Unicode details of PS-OPEN-11.
+The owner closed **PS-OPEN-01/04/05/09** via PS-025–PS-028 and **PS-OPEN-06/10** via PS-030/031; case-sensitive uniqueness and all required whitespace normalization are confirmed in PS-029/032. Only Unicode canonical-equivalence handling remains as a technical detail of PS-OPEN-11; other open decisions below belong mostly to Orders and Settings integration.
 
 | ID | Question needing owner confirmation | Proposed safe approach until decided |
 |---|---|---|
 | PS-OPEN-02 | What may an employee enter as a manual final total: is 0.00 allowed, and is an override reason required? | Allow nonnegative amount with two decimals; record override state; ask about mandatory reason in Orders. |
 | PS-OPEN-03 | If an order's **customer/type or service** changes, should a previous manual override reset just as when quantity changes? | Recalculate and clear override whenever any price-determining input changes. |
-| PS-OPEN-06 | Should monetary amounts always be displayed in EGP, or is currency configurable elsewhere? | Keep two-decimal money columns without adding a per-service currency field until decided. |
 | PS-OPEN-07 | When a Settings customer type is no longer associated with current customers but still has pricing tiers, may Settings deactivate or soft-delete it? | Prevent destructive type deletion while any active tier references it; define type deactivation behavior with Settings/Customers. |
 | PS-OPEN-08 | At which Orders status/transition does the agreed price snapshot become immutable; can a draft be repriced explicitly? | Order lifecycle decides; pricing catalog changes never perform retroactive repricing. |
-| PS-OPEN-10 | Is there an approved upper bound for order quantity, price and total beyond database capacity? | Use decimal precision and positive integer validation with a documented maximum before implementation. |
-| PS-OPEN-11 | Case-sensitive names are already approved by PS-029. Should repeated **internal whitespace** and different **Unicode normalization forms** count as the same name? | Trim outer whitespace and preserve letter case; finalize internal whitespace and Unicode normalization with explicit tests before migration. |
+| PS-OPEN-11 | Case sensitivity and whitespace normalization are approved in PS-029/PS-032. Should canonically equivalent Unicode representations (e.g. NFC vs NFD) compare as identical? | Treat this as a technical normalization/collation decision to resolve before implementing the live-only unique index; do not change letter case. |
 
 ## 20. Acceptance criteria and feature-test scenarios
 
@@ -523,7 +528,7 @@ The owner has **closed PS-OPEN-01, PS-OPEN-04, PS-OPEN-05, and PS-OPEN-09** by P
 
 1. Create active service with name and basePrice=null, no tiers.
 2. Create a service with basePrice=0.00; retrieve exact zero, not null.
-3. Reject duplicate live exact-case names after trimming; permit Business Cards and business cards to coexist, while rejecting two live Business Cards entries.
+3. On create and update, trim outer whitespace and reduce repeated internal spaces to one: `  Business    Cards  ` becomes `Business Cards`; reject its duplicate if Business Cards exists. Permit business cards (different case) to coexist.
 4. Soft-delete a never-used service and all live tiers in one transaction, then create a new service with the exact same name.
 5. Reject deletion when any order item references the service, including draft, cancelled and soft-deleted order/item records.
 6. Deactivate a used service; existing saved orders still display original name/price.
@@ -536,7 +541,7 @@ The owner has **closed PS-OPEN-01, PS-OPEN-04, PS-OPEN-05, and PS-OPEN-09** by P
 10. Add customer-specific tier pointing to active Settings customer_types value.
 11. Add generic tier with customerTypeId=null.
 12. Reject ID from printing_locations even if the number exists.
-13. Reject zero, negative, missing or null tier price; accept 0.01 and 5.75.
+13. Reject zero, negative, missing or null tier price; accept EGP 0.01 and 5.75 and enforce storage-range safety without arbitrary business caps.
 14. Accept half-open ranges (from-only, to-only) and fully open catch-all.
 15. Reject min>max, zero or fractional min/max, and a second catch-all within the same bucket.
 16. Reject same-bucket overlap (1–200 with 100–500), including shared endpoints (1–200 with 200–300).
@@ -555,7 +560,7 @@ The owner has **closed PS-OPEN-01, PS-OPEN-04, PS-OPEN-05, and PS-OPEN-09** by P
 26. Generic catch-all wins over basePrice.
 27. basePrice=0.00 resolves to proposedTotal=0.00 with requiresManualTotal=false.
 28. basePrice=null with no matching tier resolves to a missing suggestion requiring manual total.
-29. Tier unitPrice 5.75 with quantity 200 yields proposedTotal 1150.00.
+29. EGP tier unitPrice 5.75 with quantity 200 yields proposedTotal 1150.00; reject unrepresentable values/overflow with validation errors.
 30. Inclusive quantity boundaries match exact min and exact max.
 31. Employee can replace suggested order-line total without changing catalog pricing.
 32. Changing quantity invalidates the old override and recalculates the suggested total.
@@ -582,6 +587,6 @@ The owner has **closed PS-OPEN-01, PS-OPEN-04, PS-OPEN-05, and PS-OPEN-09** by P
 - Existing application response conventions, audit-column traits, Sanctum, Spatie permissions and QueryBuilder must be inspected in the implementation branch before finalizing API classes.
 - The Settings document mentions project-wide standards under specs/00-project, specs/01-architecture and specs/02-standards; these referenced documents were not present in this branch at the time this reference was drafted. Verify them when available rather than claiming they were read.
 
-**Non-negotiable boundaries:** one printing business; one application and database; no new customer-type table; no selectable price-mode field; positive tier prices; nullable or free base price; no same-bucket constrained overlap; one catch-all fallback per bucket; explicit precedence; historic order price snapshots; no service deletion once used; no changes to customer or order records within the Printing Services module.
+**Non-negotiable boundaries:** one printing business; one application and database; **EGP only**; no arbitrary business upper cap but rigorous storage/overflow validation; names trimmed/collapsed internally and case-sensitive; no new customer-type table; no selectable price-mode field; positive tier prices; nullable or free base price; no same-bucket constrained overlap; one catch-all fallback per bucket; explicit precedence; historic order price snapshots; no service deletion once used; no changes to customer or order records within the Printing Services module.
 
 **Next phase:** Confirm outstanding §19 decisions at the relevant module boundary, approve schema/API proposals, then create separate implementation plan, tasks and tests. This reference file alone is not the implementation.
