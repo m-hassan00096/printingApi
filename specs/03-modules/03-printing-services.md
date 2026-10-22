@@ -588,6 +588,8 @@ The management permissions above reflect the agreed boundaries. Selector and pre
 4. A service delete and concurrent order-item creation must be synchronized by the appropriate Orders/Services integration contract, preventing a never-used check from racing a new order link.
 5. **Case-sensitive** uniqueness of live service names requires an actual MySQL-safe constraint, not just app-level validation. Test same-case concurrent creation and coexistence of case-different names.
 6. Customer-type classification must be verified against Settings before a new tier is saved, and at the Orders boundary when selecting the applicable prices.
+6a. `PrintingServices` registers an implementation of the Settings-owned `ParameterValueUsageGuard` with its Registry. Settings invokes registered guards inside its locked parameter-value delete Transaction, without importing PrintingServices. Any live or Soft Deleted price-tier reference to a customer type **blocks** its Soft Delete with HTTP 409.
+6b. Service/tier creation and tier UPDATE commands lock distinct target customer-type rows with `lockForUpdate()` in sorted ID order in the same transaction as tier writes. This serializes against Settings' type deletion. It must still be verified under actual concurrent MySQL requests.
 7. Do not mutate old order snapshots when pricing changes.
 8. Money calculations must remain precise and deterministic.
 9. Migrations should support rollback on an empty disposable database; do not alter Settings tables unless a reviewed cross-module migration requires it.
@@ -609,7 +611,7 @@ The owner closed **PS-OPEN-01/04/05/09** via PS-025–PS-028 and **PS-OPEN-06/10
 |---|---|---|
 | PS-OPEN-02 | What may an employee enter as a manual final total: is 0.00 allowed, and is an override reason required? | Allow nonnegative amount with two decimals; record override state; ask about mandatory reason in Orders. |
 | PS-OPEN-03 | If an order's **customer/type or service** changes, should a previous manual override reset just as when quantity changes? | Recalculate and clear override whenever any price-determining input changes. |
-| PS-OPEN-07 | When a Settings customer type is no longer associated with current customers but still has pricing tiers, may Settings deactivate or soft-delete it? | Prevent destructive type deletion while any active tier references it; define type deactivation behavior with Settings/Customers. |
+| PS-OPEN-07 | **Soft Delete is protected:** when any current or soft-deleted printing price tier references a customer type, Settings blocks its Soft Delete (now implemented on the feature branch). **Open:** whether the type may be deactivated while used in pricing tiers, independent of existing Customer associations. | Do not infer a new deactivation policy from the deletion guard; decide jointly with Settings/Customers. |
 | PS-OPEN-08 | At which Orders status/transition does the agreed price snapshot become immutable; can a draft be repriced explicitly? | Order lifecycle decides; pricing catalog changes never perform retroactive repricing. |
 | PS-OPEN-11 | Case sensitivity and whitespace normalization are approved in PS-029/PS-032. Should canonically equivalent Unicode representations (e.g. NFC vs NFD) compare as identical? | Treat this as a technical normalization/collation decision to resolve before implementing the live-only unique index; do not change letter case. |
 

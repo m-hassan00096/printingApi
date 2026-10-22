@@ -233,6 +233,16 @@ Bank account defaults and wallet defaults form **independent sets**. Both sets n
 - No restore endpoint in v1. Deleted records are not included in normal management lists or selects.
 - `parameter_values` names remain reserved after Soft Delete within their group (approved SET-031). Bank-account numbers and wallet phones are also currently reserved by database unique indexes but **that policy is provisional** and pending owner approval (SET-OPEN-01).
 
+### 10.2.1 Modular parameter-value deletion checks (implemented on feature/printing-services)
+
+- The Settings `DeleteParameterValueAction` locks the `ParameterValue` row and calls its own `ParameterValueUsageRegistry` inside the same transaction.
+- The contract `Modules\\Settings\\Contracts\\ParameterValueUsageGuard` is owned by Settings. Other modules register implementations from their **own** Service Providers; Settings imports no PrintingServices classes and knows no price-tier tables.
+- PrintingServices registers `CustomerTypeUsageGuard`: for group `customer_types`, **any** price-tier row referring to this ID, including Soft Deleted rows and tiers of Soft Deleted services, blocks the customer-type Soft Delete with a translated 409 BusinessException. Unreferenced types and unrelated Settings groups retain the existing delete behavior.
+- PrintingServices locks referenced customer-type rows in sorted ID order **inside** service-create/service-update transactions to synchronize with the Settings delete check. Preview remains read-only.
+- **Runtime registration caveat:** the guard is registered when PrintingServices is enabled. Disabling/unloading a module with persisted references could bypass its guard; keep it enabled in deployments containing its data until a durable guard-availability/fail-closed policy is implemented. An ordinary FK does not prevent Soft Delete.
+- This integration covers **deletion**, not customer-type deactivation. Any further deactivation restrictions involving pricing tiers remain a separate policy decision with Settings/Customers.
+
+
 ### 10.3 Historical snapshots
 
 - **Orders:** type label and final agreed prices remain as they were at order creation/confirmation under Orders' domain contract.
