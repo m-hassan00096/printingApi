@@ -3,10 +3,13 @@
 namespace Modules\PrintingServices\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Modules\PrintingServices\Http\Requests\Concerns\LocalizedPrintingServiceValidation;
 use Illuminate\Validation\Rule;
 
 class PricePreviewRequest extends FormRequest
 {
+    use LocalizedPrintingServiceValidation;
+
     public function authorize(): bool
     {
         return true;

@@ -3,11 +3,14 @@
 namespace Modules\PrintingServices\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Modules\PrintingServices\Http\Requests\Concerns\LocalizedPrintingServiceValidation;
 use Illuminate\Validation\Rule;
 use Modules\PrintingServices\Enums\PrintingServiceStatus;
 
 class IndexPrintingServicesRequest extends FormRequest
 {
+    use LocalizedPrintingServiceValidation;
+
     public function authorize(): bool
     {
         return true;

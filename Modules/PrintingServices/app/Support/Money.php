@@ -32,7 +32,7 @@ final class Money
     public static function total(string $unitPrice, int $quantity): string
     {
         if ($quantity < 1) {
-            throw ValidationException::withMessages(['quantity' => 'Quantity must be positive.']);
+            throw ValidationException::withMessages(['quantity' => __('printing_services.messages.quantity_positive')]);
         }
 
         $cents = str_replace('.', '', self::normalize($unitPrice));
@@ -54,7 +54,7 @@ final class Money
 
         $wholeCents = ltrim(implode('', array_reverse($digits)), '0') ?: '0';
         if (strlen($wholeCents) > 30) {
-            throw ValidationException::withMessages(['quantity' => 'Price total exceeds supported storage precision.']);
+            throw ValidationException::withMessages(['quantity' => __('printing_services.messages.total_overflow')]);
         }
 
         $wholeCents = str_pad($wholeCents, 3, '0', STR_PAD_LEFT);

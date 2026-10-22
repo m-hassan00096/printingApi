@@ -9,7 +9,7 @@ class ServiceInUseException extends BusinessException
 {
     public function __construct()
     {
-        parent::__construct('A service already used by an order cannot be deleted.', HttpStatusCode::CONFLICT);
+        parent::__construct(__('printing_services.messages.service_in_use'), HttpStatusCode::CONFLICT);
     }
 }
 

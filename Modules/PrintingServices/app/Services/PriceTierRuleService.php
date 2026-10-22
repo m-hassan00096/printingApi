@@ -13,7 +13,7 @@ final class PriceTierRuleService
     {
         if (! Money::valid($price, false)) {
             throw ValidationException::withMessages([
-                $field => 'Tier price must be strictly greater than zero and have at most two decimal places.',
+                $field => __('printing_services.messages.tier_price_invalid'),
             ]);
         }
     }
@@ -32,7 +32,7 @@ final class PriceTierRuleService
 
         if (! $exists) {
             throw ValidationException::withMessages([
-                $field => 'Customer type must be an active Settings customer type.',
+                $field => __('printing_services.messages.customer_type_invalid'),
             ]);
         }
     }
@@ -50,7 +50,7 @@ final class PriceTierRuleService
                 || ($max !== null && $max < 1)
                 || ($min !== null && $max !== null && $min > $max)) {
                 throw ValidationException::withMessages([
-                    'priceTiers' => 'Invalid quantity range.',
+                    'priceTiers' => __('printing_services.messages.quantity_range_invalid'),
                 ]);
             }
 
@@ -64,7 +64,7 @@ final class PriceTierRuleService
             foreach ($bucket as $tier) {
                 if ($tier['minQuantity'] === null && $tier['maxQuantity'] === null) {
                     if ($catchAllFound) {
-                        throw ValidationException::withMessages(['priceTiers' => 'Only one catch-all tier is allowed per customer type.']);
+                        throw ValidationException::withMessages(['priceTiers' => __('printing_services.messages.duplicate_catch_all')]);
                     }
                     $catchAllFound = true;
                     continue;
@@ -77,7 +77,7 @@ final class PriceTierRuleService
                     $prevMax = $previous['maxQuantity'];
                     if (($prevMax === null || $min <= $prevMax)
                         && ($max === null || $prevMin <= $max)) {
-                        throw ValidationException::withMessages(['priceTiers' => 'Overlapping quantity tiers are not permitted for the same customer type.']);
+                        throw ValidationException::withMessages(['priceTiers' => __('printing_services.messages.overlapping_ranges')]);
                     }
                 }
 

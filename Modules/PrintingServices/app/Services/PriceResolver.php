@@ -16,11 +16,11 @@ class PriceResolver
     public function resolve(PrintingService $service, ?int $customerTypeId, int $quantity): array
     {
         if ($service->status !== PrintingServiceStatus::ACTIVE) {
-            throw ValidationException::withMessages(['serviceId' => 'Service is inactive.']);
+            throw ValidationException::withMessages(['serviceId' => __('printing_services.messages.inactive_service')]);
         }
 
         if ($quantity < 1) {
-            throw ValidationException::withMessages(['quantity' => 'Quantity must be greater than zero.']);
+            throw ValidationException::withMessages(['quantity' => __('printing_services.messages.quantity_positive')]);
         }
 
         $this->rules->assertCustomerType($customerTypeId);

@@ -13,12 +13,12 @@ trait ValidatesTierData
 
         foreach (['customerTypeId', 'minQuantity', 'maxQuantity'] as $field) {
             if ($requireAll && ! array_key_exists($field, $tier)) {
-                $validator->errors()->add($prefix.$field, 'This field is required for a full tier update.');
+                $validator->errors()->add($prefix.$field, __('printing_services.messages.tier_full_update_required'));
             }
         }
 
         if (! array_key_exists('price', $tier) || ! Money::valid($tier['price'], false)) {
-            $validator->errors()->add($prefix.'price', 'Tier price must be strictly positive EGP with at most two decimals.');
+            $validator->errors()->add($prefix.'price', __('printing_services.messages.tier_price_invalid'));
         }
 
         foreach (['customerTypeId', 'minQuantity', 'maxQuantity'] as $field) {
@@ -27,7 +27,7 @@ trait ValidatesTierData
             }
             $value = $tier[$field];
             if (! self::validPositiveInteger($value)) {
-                $validator->errors()->add($prefix.$field, 'Must be a positive integer within supported numeric storage.');
+                $validator->errors()->add($prefix.$field, __('printing_services.messages.positive_integer_required'));
             }
         }
 
@@ -35,7 +35,7 @@ trait ValidatesTierData
         $max = $tier['maxQuantity'] ?? null;
         if (self::validPositiveInteger($min) && self::validPositiveInteger($max)
             && (int) $min > (int) $max) {
-            $validator->errors()->add($prefix.'maxQuantity', 'End quantity must be greater than or equal to start quantity.');
+            $validator->errors()->add($prefix.'maxQuantity', __('printing_services.messages.max_quantity_before_min'));
         }
     }
 

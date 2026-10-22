@@ -3,6 +3,7 @@
 namespace Modules\PrintingServices\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Modules\PrintingServices\Http\Requests\Concerns\LocalizedPrintingServiceValidation;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 use Modules\PrintingServices\Enums\PriceTierActionStatus;
@@ -21,6 +22,8 @@ class UpdatePrintingServiceRequest extends FormRequest
         $this->prepareServiceName();
     }
 
+    use LocalizedPrintingServiceValidation;
+
     public function authorize(): bool
     {
         return true;
@@ -35,7 +38,7 @@ class UpdatePrintingServiceRequest extends FormRequest
             'name' => ['sometimes', 'required', 'string', 'max:150', $this->uniqueLiveName($service?->id)],
             'basePrice' => ['sometimes', 'nullable', function ($attr, $value, $fail): void {
                 if (! Money::valid($value, true)) {
-                    $fail('Base price must be nonnegative EGP with up to two decimals.');
+                    $fail(__('printing_services.messages.base_price_invalid'));
                 }
             }],
             'status' => ['sometimes', 'required', 'integer', Rule::enum(PrintingServiceStatus::class)],
@@ -67,21 +70,21 @@ class UpdatePrintingServiceRequest extends FormRequest
                     is_int($tier['actionStatus']) ? $tier['actionStatus'] : -1
                 );
                 if ($action === null) {
-                    $validator->errors()->add('priceTiers.'.$index.'.actionStatus', 'Invalid tier action enum value.');
+                    $validator->errors()->add('priceTiers.'.$index.'.actionStatus', __('printing_services.messages.invalid_tier_action'));
                     continue;
                 }
                 $id = $tier['priceTierId'] ?? null;
                 if ($action === PriceTierActionStatus::CREATE) {
                     if (array_key_exists('priceTierId', $tier)) {
-                        $validator->errors()->add('priceTiers.'.$index.'.priceTierId', 'A new tier cannot have an existing ID.');
+                        $validator->errors()->add('priceTiers.'.$index.'.priceTierId', __('printing_services.messages.create_tier_has_id'));
                     }
                 } elseif (in_array($action, [PriceTierActionStatus::UPDATE, PriceTierActionStatus::DELETE], true) && ! self::validPositiveInteger($id)) {
-                    $validator->errors()->add('priceTiers.'.$index.'.priceTierId', 'This action requires a valid tier ID.');
+                    $validator->errors()->add('priceTiers.'.$index.'.priceTierId', __('printing_services.messages.tier_id_required'));
                 }
 
                 if ($id !== null && self::validPositiveInteger($id)) {
                     if (isset($seen[(string) $id])) {
-                        $validator->errors()->add('priceTiers.'.$index.'.priceTierId', 'Duplicate price tier ID in batch.');
+                        $validator->errors()->add('priceTiers.'.$index.'.priceTierId', __('printing_services.messages.duplicate_tier_command'));
                     }
                     $seen[(string) $id] = true;
                 }

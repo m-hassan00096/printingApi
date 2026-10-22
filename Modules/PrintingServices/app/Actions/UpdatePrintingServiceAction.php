@@ -41,12 +41,12 @@ class UpdatePrintingServiceAction
                     $id = (int) $command['priceTierId'];
                     if (! $stored->has($id)) {
                         throw ValidationException::withMessages([
-                            'priceTiers' => 'Price tier does not exist in this service.',
+                            'priceTiers' => __('printing_services.messages.tier_not_found'),
                         ]);
                     }
                     if (isset($seen[$id])) {
                         throw ValidationException::withMessages([
-                            'priceTiers' => 'The same price tier cannot appear more than once in a command batch.',
+                            'priceTiers' => __('printing_services.messages.duplicate_tier_command'),
                         ]);
                     }
                     $seen[$id] = true;
@@ -126,7 +126,7 @@ class UpdatePrintingServiceAction
             }, 3);
         } catch (UniqueConstraintViolationException $exception) {
             throw \Illuminate\Validation\ValidationException::withMessages([
-                'name' => 'The service name is already in use.',
+                'name' => __('printing_services.messages.duplicate_name'),
             ]);
         }
     }

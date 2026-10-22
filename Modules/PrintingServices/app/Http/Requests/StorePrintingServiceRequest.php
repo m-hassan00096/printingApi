@@ -3,6 +3,7 @@
 namespace Modules\PrintingServices\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Modules\PrintingServices\Http\Requests\Concerns\LocalizedPrintingServiceValidation;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 use Modules\PrintingServices\Enums\PrintingServiceStatus;
@@ -19,6 +20,8 @@ class StorePrintingServiceRequest extends FormRequest
         $this->prepareServiceName();
     }
 
+    use LocalizedPrintingServiceValidation;
+
     public function authorize(): bool
     {
         return true;
@@ -30,7 +33,7 @@ class StorePrintingServiceRequest extends FormRequest
             'name' => ['required', 'string', 'max:150', $this->uniqueLiveName()],
             'basePrice' => ['sometimes', 'nullable', function ($attr, $value, $fail): void {
                 if (! Money::valid($value, true)) {
-                    $fail('Base price must be nonnegative EGP with up to two decimals.');
+                    $fail(__('printing_services.messages.base_price_invalid'));
                 }
             }],
             'status' => ['required', 'integer', Rule::enum(PrintingServiceStatus::class)],

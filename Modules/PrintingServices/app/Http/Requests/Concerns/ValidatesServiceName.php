@@ -28,7 +28,7 @@ trait ValidatesServiceName
                 $query->whereKeyNot($ignoreId);
             }
             if ($query->exists()) {
-                $fail('The service name is already in use.');
+                $fail(__('printing_services.messages.duplicate_name'));
             }
         };
     }

@@ -54,7 +54,7 @@ class CreatePrintingServiceAction
             }, 3);
         } catch (UniqueConstraintViolationException $exception) {
             throw \Illuminate\Validation\ValidationException::withMessages([
-                'name' => 'The service name is already in use.',
+                'name' => __('printing_services.messages.duplicate_name'),
             ]);
         }
     }
