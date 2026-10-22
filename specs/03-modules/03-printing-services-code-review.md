@@ -3,7 +3,7 @@
 **Branch:** `feature/printing-services`  
 **Target:** `develop`  
 **Reference:** [03-printing-services.md](./03-printing-services.md)  
-**State:** Initial implementation committed; **no PHPUnit/Artisan/MySQL runtime run has been executed through this review**. Not yet approved for PR merge or production.
+**State:** Initial implementation committed. **User-reported PHPUnit suites passed on 2026-10-22**: Printing Services 19 tests / 106 assertions and full project 331 tests / 1253 assertions. MySQL concurrency, route review and cross-module Orders integration **remain unverified**; no merge approval yet.
 
 ## Delivered independently of Settings
 
@@ -19,7 +19,16 @@
 - PHPUnit feature tests under `Modules/PrintingServices/tests/Feature` and money arithmetic unit tests under `Modules/PrintingServices/tests/Unit`; a separate suite is registered in `phpunit.xml`.
 - No modifications to existing Settings/Identity business implementation. Identity's **existing** `RoleSeeder` syncs permissions after module permission seeding.
 
-## Required local verification
+## PHPUnit results (reported by project owner, 2026-10-22)
+
+| Test execution | Result | Assertions | Duration |
+|---|---:|---:|---:|
+| `php artisan test --testsuite="Printing Services Module"` | **19 passed** | 106 | 1.78 s |
+| `php artisan test` — all modules and application | **331 passed** | 1,253 | 20.73 s |
+
+These outputs were supplied from the owner's **local environment**. They establish that the shown tests completed successfully in that environment; the repository connector has not independently executed PHPUnit. **19 module tests are already included in the 331 global tests**, not additional tests. A passing SQLite-based suite does not verify MySQL row-level locks, migration/index collation behavior or future Orders integration.
+
+## Remaining local verification
 
 Run from the project root on a development/test database (do not run fresh migrations against an unreviewed production database):
 
@@ -31,6 +40,7 @@ composer dump-autoload
 php artisan optimize:clear
 php artisan module:list
 php artisan migrate:status
+## These PHPUnit commands have already passed according to the owner, but rerun after any future code changes:
 php artisan test --testsuite="Printing Services Module"
 php artisan test
 php artisan route:list --path=api/v1/printing-services
@@ -42,7 +52,7 @@ php artisan db:seed --class="Modules\PrintingServices\Database\Seeders\PrintingS
 
 ## Boundaries and integration blockers
 
-1. **Not runtime-verified.** All code additions were made via the connected GitHub repository without the local project/vendor environment, and no PHPUnit results or route output has been observed. Running commands above may reveal additional fixes.
+1. **PHPUnit passed in the owner's local environment** (19 module tests and 331 full-suite tests); results were supplied by the owner and not executed by the GitHub connector. Artisan route/migration/seed outputs and MySQL-specific behavior have not been independently reviewed. Any further code changes require a rerun.
 2. **Orders historic-use rule is conditional.** Orders does not exist yet in this project branch. `DeletePrintingServiceAction` currently checks the prospective `order_items.printing_service_id` relation **when that table exists** and fails closed if the table exists without the FK column. Once Orders is built, the owning Orders module must explicitly lock/reference the service on order creation and test the delete/create race across draft/cancelled/soft-deleted order records. Passing Printing Services tests today does not prove this future contract.
 3. **Settings customer-type historic protection.** Before integrated usage, Settings must prevent unsafe deletion of customer types referenced by price tiers and agree on deactivation policy, without cascading pricing data.
 4. **MySQL concurrency.** SQLite tests do not prove real `lockForUpdate` serialization. Test two competing tier writes, live-name rename/create operations and the service-delete/order-create race against actual MySQL.
@@ -50,4 +60,4 @@ php artisan db:seed --class="Modules\PrintingServices\Database\Seeders\PrintingS
 6. **Numeric storage.** `DECIMAL(30,2)` and PHP signed integer limits are technical storage boundaries; there is no independent business cap. Test overflow/precision to avoid truncation.
 7. **Orders price snapshots.** Orders owns final line total and manual override behavior; these snapshots and update triggers are not new Printing Services columns.
 
-**Review verdict:** Code committed for developer-led tests and review, **not a verified/passing implementation**. Do not merge before tests/migrations/security checks and outstanding cross-module blockers are addressed or explicitly tracked.
+**Review verdict:** **Owner-reported local PHPUnit green: 19 module tests / 331 total**. Initial unit and feature regression gate passed; **full technical sign-off still pending** MySQL migration/concurrency, route/security verification and explicit handling or tracking of Orders/Settings integration constraints. Do not claim production readiness or merge on PHPUnit results alone.
