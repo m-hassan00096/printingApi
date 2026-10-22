@@ -21,6 +21,7 @@ return [
         'inactive_service' => 'The printing service is inactive and cannot be used in a new order.',
         'quantity_positive' => 'The quantity must be a positive whole number.',
         'total_overflow' => 'The price total exceeds supported numeric storage precision.',
+        'invalid_service_usage_guard' => 'Invalid printing service usage guard [:guard].',
         'service_in_use' => 'This printing service cannot be deleted because it is used in an order.',
         'price_tier_conflict' => 'There is a conflict in the printing service price tiers.',
     ],

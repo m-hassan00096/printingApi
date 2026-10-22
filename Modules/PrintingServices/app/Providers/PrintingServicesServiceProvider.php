@@ -14,6 +14,7 @@ class PrintingServicesServiceProvider extends ModuleServiceProvider
         RouteServiceProvider::class,
         PrintingServicesSelectServiceProvider::class,
         PrintingServicesParameterValueServiceProvider::class,
+        PrintingServiceUsageServiceProvider::class,
     ];
 }
 
