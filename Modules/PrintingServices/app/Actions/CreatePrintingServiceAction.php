@@ -27,6 +27,16 @@ class CreatePrintingServiceAction
             $service->live_name_hash = ServiceName::hash($name);
 
             $tiers = $data['priceTiers'] ?? [];
+
+            $references = [];
+            foreach ($tiers as $index => $tier) {
+                $references[] = [
+                    'id' => isset($tier['customerTypeId']) ? (int) $tier['customerTypeId'] : null,
+                    'field' => "priceTiers.{$index}.customerTypeId",
+                ];
+            }
+            $this->tierRules->lockCustomerTypesForWrite($references);
+
             $final = [];
             foreach ($tiers as $index => $tier) {
                 $this->tierRules->assertPrice($tier['price'], "priceTiers.{$index}.price");

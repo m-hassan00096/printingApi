@@ -38,6 +38,45 @@ final class PriceTierRuleService
     }
 
     /**
+     * Lock candidate customer-type records before creating or updating tiers.
+     * The parent service is already locked by UpdatePrintingServiceAction.
+     * Sorting the IDs ensures that concurrent batches acquire customer-type
+     * locks in a consistent order and cannot race a Settings soft delete.
+     *
+     * Must be called inside the caller's DB transaction.
+     *
+     * @param array<int, array{id: ?int, field: string}> $references
+     */
+    public function lockCustomerTypesForWrite(array $references): void
+    {
+        $fieldsById = [];
+
+        foreach ($references as $reference) {
+            $id = $reference['id'];
+            if ($id !== null) {
+                $fieldsById[$id] ??= $reference['field'];
+            }
+        }
+
+        ksort($fieldsById, SORT_NUMERIC);
+
+        foreach ($fieldsById as $id => $field) {
+            $valid = ParameterValue::query()
+                ->whereKey($id)
+                ->where('status', ParameterValueStatus::ACTIVE->value)
+                ->whereHas('parameter', fn ($query) => $query->where('name', 'customer_types'))
+                ->lockForUpdate()
+                ->first();
+
+            if ($valid === null) {
+                throw ValidationException::withMessages([
+                    $field => __('printing_services.messages.customer_type_invalid'),
+                ]);
+            }
+        }
+    }
+
+    /**
      * @param array<int, array{customerTypeId: ?int, minQuantity: ?int, maxQuantity: ?int}> $tiers
      */
     public function assertValidFinalRanges(array $tiers): void

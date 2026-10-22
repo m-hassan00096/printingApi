@@ -30,6 +30,21 @@ class UpdatePrintingServiceAction
             }
 
             $commands = $data['priceTiers'] ?? [];
+
+            $references = [];
+            foreach ($commands as $index => $command) {
+                if (in_array((int) $command['actionStatus'], [
+                    PriceTierActionStatus::CREATE->value,
+                    PriceTierActionStatus::UPDATE->value,
+                ], true)) {
+                    $references[] = [
+                        'id' => isset($command['customerTypeId']) ? (int) $command['customerTypeId'] : null,
+                        'field' => "priceTiers.{$index}.customerTypeId",
+                    ];
+                }
+            }
+            $this->tierRules->lockCustomerTypesForWrite($references);
+
             $seen = [];
             $new = 0;
             foreach ($commands as $index => $command) {
