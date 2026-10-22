@@ -92,12 +92,16 @@ abstract class PrintingServiceTestCase extends TestCase
     protected function service(array $changes = []): PrintingService
     {
         $name = $changes['name'] ?? 'Business Cards';
-        return PrintingService::query()->create([
-            'name' => $name,
-            'live_name_hash' => hash('sha256', $name),
-            'base_price' => $changes['basePrice'] ?? '10.00',
-            'status' => $changes['status'] ?? PrintingServiceStatus::ACTIVE,
-        ]);
+        $service = new PrintingService();
+        $service->name = $name;
+        $service->live_name_hash = hash('sha256', $name);
+        $service->base_price = array_key_exists('basePrice', $changes)
+            ? $changes['basePrice']
+            : '10.00';
+        $service->status = $changes['status'] ?? PrintingServiceStatus::ACTIVE;
+        $service->save();
+
+        return $service;
     }
 
     protected function tier(PrintingService $service, array $changes = []): int
