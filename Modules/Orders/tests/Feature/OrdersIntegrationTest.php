@@ -53,7 +53,8 @@ class OrdersIntegrationTest extends OrdersTestCase
     public function test_confirm_requires_idempotency_key(): void
     {
         $order = $this->draft();
-        $this->postJson($this->path($order).'/confirm')->assertUnprocessable()
+        $this->withHeader('Idempotency-Key', '')
+            ->postJson($this->path($order).'/confirm')->assertUnprocessable()
             ->assertJsonValidationErrors('Idempotency-Key');
     }
 
