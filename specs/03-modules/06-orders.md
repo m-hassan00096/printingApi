@@ -61,7 +61,7 @@ All under `auth:sanctum` with Spatie permission. Standard `ApiResponse` success/
 |---|---|---|
 | `GET /api/v1/orders` | `orders.view` | `data.orders` array + `data.pagination`; search by orderNumber/customer.name/customer.phone; exact `filter[status]`, `filter[productionStatus]`, `filter[lateOnly]=1`; sort id/created_at/due_date default `-id`; page/perPage max100. All includes Draft and Cancelled; Draft orderNumber = null. |
 | `GET /api/v1/orders/{order}` | `orders.view` | order Resource incl. items/files and relevant history; no historical Finance values until Finance exists |
-| `POST /api/v1/orders` | `orders.create` | Creates DRAFT with client, source, dueDate?, notes?, `items` min1; HTTP 201 localized message and complete order resource incl. ID. No ORDn number/ledger. |
+| `POST /api/v1/orders` | `orders.create` | Requires `Idempotency-Key` header; creates DRAFT with client, source, dueDate?, notes?, `items` min1; HTTP 201 localized message and complete order resource incl. ID. Replaying the same key and payload returns the existing Draft; changed payload or deleted Draft returns 409. No ORD number/ledger. |
 | `PUT/PATCH /api/v1/orders/{order}` | `orders.update` | Draft header only; optional customerId/source/dueDate/notes. Customer change only in Draft; snapshots and suggested prices for unchanged items refresh when customer changes while agreed totals persist. HTTP 200 localized message, order resource. |
 | `POST /api/v1/orders/{order}/items` | `orders.update` | Add item to Draft. |
 | `PUT/PATCH /api/v1/orders/{order}/items/{item}` | `orders.update` | Update Draft item serviceId/quantity/specifications/agreedTotal; recalculate suggested metadata and order total. |

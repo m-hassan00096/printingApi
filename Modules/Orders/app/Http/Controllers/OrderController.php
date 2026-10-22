@@ -5,6 +5,7 @@ use App\Enums\HttpStatusCode;
 use App\Helpers\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
+use Illuminate\Validation\ValidationException;
 use Modules\Orders\Http\Requests\IndexOrdersRequest;
 use Modules\Orders\Http\Requests\StoreOrderRequest;
 use Modules\Orders\Http\Requests\UpdateOrderRequest;
@@ -12,6 +13,7 @@ use Modules\Orders\Http\Resources\OrderCollection;
 use Modules\Orders\Http\Resources\OrderResource;
 use Modules\Orders\Models\Order;
 use Modules\Orders\Services\DraftOrderService;
+use Modules\Orders\Services\OrderDraftIdempotencyService;
 use Modules\Orders\Services\OrderQueryService;
 
 class OrderController extends Controller
@@ -30,9 +32,16 @@ class OrderController extends Controller
         );
     }
 
-    public function store(StoreOrderRequest $request, DraftOrderService $drafts): JsonResponse
+    public function store(StoreOrderRequest $request, OrderDraftIdempotencyService $drafts): JsonResponse
     {
-        $order = $drafts->create($request->validated());
+        $key = trim((string) $request->header('Idempotency-Key', ''));
+        if ($key === '' || strlen($key) > 128) {
+            throw ValidationException::withMessages([
+                'Idempotency-Key' => __('orders.messages.idempotency_required'),
+            ]);
+        }
+
+        $order = $drafts->create($request->validated(), $key);
 
         return ApiResponse::success(
             data: (new OrderResource($order))->resolve($request),

@@ -23,6 +23,7 @@ return [
         'file_extension' => 'This file format is not supported.',
         'file_too_large' => 'The maximum upload size is 100 MiB.',
         'idempotency_required' => 'The idempotency key is required.',
+        'idempotency_reused' => 'The idempotency key was already used for a different request or deleted draft.',
         'unsupported_field' => 'The field :field is not supported.',
         'cannot_cancel' => 'An order that was not confirmed or was delivered cannot be cancelled.',
         'confirmed' => 'Order confirmed successfully.',
