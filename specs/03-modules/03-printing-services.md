@@ -3,7 +3,7 @@
 > **Document type:** Module Reference — functional requirements and proposed technical contracts only  
 > **Location:** specs/03-modules/03-printing-services.md  
 > **Branch:** feature/printing-services  
-> **Status:** Requirements draft — owner-confirmed rules recorded; remaining decisions explicitly isolated in §19  
+> **Status:** Requirements draft — owner-confirmed rules recorded; remaining decisions explicitly isolated in §19 (five latest owner answers incorporated)  
 > **Scope:** Internal printing-service catalog, customer-type/quantity pricing, and pricing contracts for future order items  
 > **Stack:** Laravel 13 · React SPA · Sanctum stateful authentication · Spatie Laravel Permission · MySQL · nwidart/laravel-modules  
 > **Language:** Arabic API locale currently; technical identifiers and API fields in English  
@@ -82,6 +82,11 @@ The following are decisions made in the Printing Services discussion; they must 
 | PS-022 | Historical order totals and agreed prices are immutable under later catalog/tier edits. |
 | PS-023 | Service/tier money amounts have two decimal places (e.g. 5.75). |
 | PS-024 | Previously approved Settings behavior applies: the customer type is chosen on the customer, not independently on each order item; changing it affects future orders, not old prices. |
+| PS-025 | Any **persisted order item** referencing the service prevents deleting it, including items belonging to draft or cancelled orders and soft-deleted order/item records. Unsaved frontend forms are not persisted order items. |
+| PS-026 | Soft-deleting a never-used service must also **soft-delete all its live price tiers atomically**, in the same transaction. |
+| PS-027 | The pricing preview API accepts **customerTypeId**, not customerId; Orders must derive the actual customer's type from server-trusted customer data. |
+| PS-028 | Price-tier management belongs to **service/product management permissions**; no separate tier create/update/delete permissions. |
+| PS-029 | Uniqueness of live service names is **case-sensitive**. For example, Business Cards and business cards are distinct, while two live copies of Business Cards are not permitted. |
 
 ### Clarifications from these decisions
 
@@ -102,7 +107,8 @@ The following are decisions made in the Printing Services discussion; they must 
 - A service may exist without any tiers.
 - A service may exist with basePrice=null and no tiers, and still be available for manual-price order entry.
 - Inactive services remain visible in authorized management lists but must not be selectable for **new** order lines.
-- Service names are trimmed before uniqueness validation. The exact case/Unicode comparison follows the reviewed database collation and must be made deterministic.
+- Service names are trimmed before uniqueness validation and compared **case-sensitively**. The names Business Cards and business cards are distinct; a duplicate with exactly matching case is not allowed among live records.
+- Request validation and database uniqueness must both be case-sensitive, regardless of the database default collation. Repeated internal whitespace and Unicode normalization details remain open in §19.
 - Existing saved order lines continue to display the name captured when they were created, even after catalog rename or service deactivation.
 - Do not add printing locations, customer types, or account details directly to service records.
 
@@ -245,12 +251,12 @@ If the basePrice is zero and there is no matching tier, proposed total is precis
 
 ### 9.2 Service Soft Delete
 
-- A service **never referenced** by an order item may be soft-deleted.
-- A service ever referenced by an order item **must be protected against deletion**, even if its order is old or completed. Deactivation is allowed.
+- A service **never referenced by any persisted order item** may be soft-deleted.
+- **Any persisted order item reference** prevents deleting a service, even where the order is draft, cancelled, completed, or the order/item is soft-deleted. An unsaved frontend draft does not qualify as a persisted reference. Deactivation is allowed.
 - Check reference existence in the owning Orders module at integration time; a missing Orders table today is not evidence the delete rule has been implemented.
 - Do not cascade hard-delete order items, history, or tier-price snapshots.
 - Names from soft-deleted services can be used again by a new active service; soft-deleted services are hidden from ordinary management lists and selects.
-- The handling of child tier Soft Deletes when a never-used parent service is deleted is proposed in §11 and should be confirmed before implementation.
+- Soft-deleting an eligible never-used service must soft-delete **its live child tiers in the same transaction**. No physical deletion of tiers or historical records.
 - No restore API in v1.
 
 ### 9.3 Tier Soft Delete and editing
@@ -296,7 +302,7 @@ Important distinctions:
 | created_at / updated_at | TIMESTAMP | Standard timestamps |
 | deleted_at | TIMESTAMP NULL | Soft Delete |
 
-**Critical MySQL uniqueness requirement:** a simple UNIQUE(name) incorrectly prevents name reuse after Soft Delete. A simple UNIQUE(name, deleted_at) also **does not** enforce uniqueness among live rows in MySQL because multiple NULL values are allowed. Implement a reviewed **live-only** uniqueness strategy, e.g. a normalized generated column that is populated only while deleted_at IS NULL, then a unique index on that generated column. Align normalization and case/collation behavior with request validation; test concurrent creates and reuse-after-delete.
+**Critical MySQL uniqueness requirement:** a simple UNIQUE(name) incorrectly prevents name reuse after Soft Delete. A simple UNIQUE(name, deleted_at) also **does not** enforce uniqueness among live rows in MySQL because multiple NULL values are allowed. Implement a reviewed **live-only, case-sensitive** unique key, for example a generated column containing the trimmed name only while deleted_at IS NULL with a unique index using a case-sensitive/binary-compatible collation supported by the target MySQL version. Different capitalization must coexist, identical names must not, and deleted names must be reusable. Verify actual collation semantics for whitespace/Unicode before migration. Database constraint and application validation must agree and be tested under concurrent creation.
 
 ### 11.2 printing_service_price_tiers (working name)
 
@@ -351,7 +357,7 @@ Follow the existing project conventions: camelCase public fields, unified ApiRes
 | DELETE | /api/v1/printing-services/{service}/price-tiers/{tier} | Soft-delete tier |
 | POST | /api/v1/printing-services/price-preview | Calculate proposed unit price/total for a service, customer type and quantity |
 
-The preview endpoint's final placement/authorization and whether it is needed as a separate network call remain open in §19. A request may need a customerId rather than caller-supplied customerTypeId so the API cannot quote a fictitious customer category; the Orders integration must resolve that safely.
+The owner approved **customerTypeId** as the pricing-preview input (not customerId). Validate that the ID belongs to active, non-deleted Settings customer_types before calculating a preview. The proposed endpoint placement/authorization remains subject to technical review. **Orders must resolve the actual customer's current customerTypeId server-side** when creating or updating an order; an untrusted preview input must not allow a mismatched customer classification on saved orders.
 
 Proposed management list: filter[search], filter[status], sort, page, perPage. DefaultSort(-id), pagination metadata and allowed sorting should match the actual Settings implementation. Tier list ordering should be deterministic. Prevent nested tier routes from modifying a tier owned by another service.
 
@@ -441,7 +447,7 @@ Use the existing cross-module Select Registry / GET /api/v1/selects; do not crea
 
 For choosing a tier's customer type, reuse **Settings' existing customerTypes selector**. A null customerTypeId is presented in the frontend as an "All customer types" choice but is not persisted as a new Settings value.
 
-Whether an order-entry-specific select should include service base price or current calculated price depends on quantity and customer and therefore must not be hard-coded into a static global select. The preview/service pricing contract owns that calculation.
+Whether an order-entry-specific select should include service base price or current calculated price depends on quantity and customer and therefore must not be hard-coded into a static global select. The preview/service pricing contract owns that calculation using customerTypeId; actual Orders must derive the customer's type from trusted customer data.
 
 ## 15. Validation, errors and authorization semantics
 
@@ -453,7 +459,9 @@ Whether an order-entry-specific select should include service base price or curr
 - Reject customerTypeId belonging to printing_locations, another group, an inactive/deleted type or an unknown value.
 - Reject tier update/delete when tier does not belong to its parent service.
 - Reject new order use of inactive/soft-deleted services; retain historical read access via Orders.
-- Reject service delete if any persisted historic order item references it; transactionally check before marking deleted.
+- Reject service delete if **any persisted order item** references it, including draft, cancelled or soft-deleted histories; transactionally check before marking deleted.
+- Soft-delete all live child price tiers in the **same transaction** as a permitted never-used service deletion.
+- Uniqueness validation must be case-sensitive for live service names and allow exact-name reuse after Soft Delete.
 - Reject unauthenticated operations (401); enforce specific Spatie permissions (403); preserve 404 for nonexistent or soft-deleted items according to existing route-binding rules.
 - Return 422 for ordinary validation errors and a consistent business conflict (project error contract, likely 409) for overlapping concurrent pricing-state conflicts or prohibited deletion, as decided in implementation.
 - Surface errors on public camelCase fields, not internal DB column names; do not expose SQL or internal rules.
@@ -461,21 +469,18 @@ Whether an order-entry-specific select should include service base price or curr
 
 ## 16. Proposed permissions
 
-These names are proposals, not an already-created permission catalog.
+The owner approved using service/product management permissions for all price-tier operations. **Do not introduce separate tier create/update/delete permissions.**
 
 | Permission | Purpose |
 |---|---|
-| printing_services.view | List/show services and tiers |
-| printing_services.create | Create a service, including initial tiers if supported |
-| printing_services.update | Rename/reprice/activate/deactivate service |
-| printing_services.delete | Soft-delete eligible never-used service |
-| printing_services.price_tiers.create | Add tier |
-| printing_services.price_tiers.update | Modify tier |
-| printing_services.price_tiers.delete | Soft-delete tier |
-| printing_services.selects.view | Select active services for an allowed workflow |
-| printing_services.price_preview.view | Preview pricing, if this separate endpoint is retained |
+| printing_services.view | List/show services and their tiers |
+| printing_services.create | Create a service with any initial price tiers |
+| printing_services.update | Edit a service, including **adding, updating and soft-deleting tiers** on an existing service |
+| printing_services.delete | Soft-delete an eligible never-used service and all its live tiers |
+| printing_services.selects.view | Read selectable active services (permission name proposed) |
+| printing_services.price_preview.view | Preview prices, if a separate endpoint is retained (permission name proposed) |
 
-The Orders permission governing manual overrides belongs to Orders, not to Printing Services. Reuse existing Spatie permission seeding and Identity's RoleSeeder after new permissions have been registered; never duplicate role-management seeders or rely on a privileged role-name bypass.
+The management permissions above reflect the agreed boundaries. Selector and preview permissions/endpoint placement still need technical verification. Price preview never grants a pricing write. Orders owns permission for overriding agreed order totals. Reuse the existing Identity RoleSeeder after registering new permissions; no redundant admin-role seeder or role-name bypass.
 
 ## 17. Transactions, consistency and database safety
 
@@ -483,7 +488,7 @@ The Orders permission governing manual overrides belongs to Orders, not to Print
 2. Tier add/update must lock an appropriate stable pricing scope, reread the currently live tiers and validate **after** acquiring the lock; otherwise parallel requests can produce overlapping ranges.
 3. Price preview must ignore soft-deleted services/tiers and treat active/inactive correctly. Do not rely on cached frontend rules for authoritative saved orders.
 4. A service delete and concurrent order-item creation must be synchronized by the appropriate Orders/Services integration contract, preventing a never-used check from racing a new order link.
-5. Uniqueness of live service names requires an actual MySQL-safe constraint, not just app-level validation.
+5. **Case-sensitive** uniqueness of live service names requires an actual MySQL-safe constraint, not just app-level validation. Test same-case concurrent creation and coexistence of case-different names.
 6. Customer-type classification must be verified against Settings before a new tier is saved, and at the Orders boundary when selecting the applicable prices.
 7. Do not mutate old order snapshots when pricing changes.
 8. Money calculations must remain precise and deterministic.
@@ -498,23 +503,19 @@ The Orders permission governing manual overrides belongs to Orders, not to Print
 - Re-running seeders must not rewrite manually configured services or price tiers.
 - The customerTypes Settings select already exists; add only the Printing Services select registration as needed.
 
-## 19. Open decisions and proposed defaults — not owner-approved
+## 19. Remaining open decisions and proposed defaults — not owner-approved
 
-These items should be answered during the next review. The rest of this document can be used without guessing their outcomes.
+The owner has **closed PS-OPEN-01, PS-OPEN-04, PS-OPEN-05, and PS-OPEN-09** by PS-025 through PS-028; the case-sensitivity portion of PS-OPEN-11 is closed by PS-029. Decisions below remain pending, including the still-unresolved whitespace/Unicode details of PS-OPEN-11.
 
 | ID | Question needing owner confirmation | Proposed safe approach until decided |
 |---|---|---|
-| PS-OPEN-01 | Does "ever used" include draft/cancelled/deleted order items, as well as confirmed orders? | Treat **any** persisted historical order-item reference as used; never hard-delete referenced services. |
 | PS-OPEN-02 | What may an employee enter as a manual final total: is 0.00 allowed, and is an override reason required? | Allow nonnegative amount with two decimals; record override state; ask about mandatory reason in Orders. |
 | PS-OPEN-03 | If an order's **customer/type or service** changes, should a previous manual override reset just as when quantity changes? | Recalculate and clear override whenever any price-determining input changes. |
-| PS-OPEN-04 | When deleting a never-used parent service, should its tiers also be soft-deleted in the same transaction? | Yes, preserve their soft-deleted records rather than hard-delete them. |
-| PS-OPEN-05 | Should pricing-preview receive customerId (backend resolves type), or customerTypeId (for administrative simulations)? | Orders must resolve a real customer's current type; separate admin preview can accept validated type ID. |
 | PS-OPEN-06 | Should monetary amounts always be displayed in EGP, or is currency configurable elsewhere? | Keep two-decimal money columns without adding a per-service currency field until decided. |
 | PS-OPEN-07 | When a Settings customer type is no longer associated with current customers but still has pricing tiers, may Settings deactivate or soft-delete it? | Prevent destructive type deletion while any active tier references it; define type deactivation behavior with Settings/Customers. |
 | PS-OPEN-08 | At which Orders status/transition does the agreed price snapshot become immutable; can a draft be repriced explicitly? | Order lifecycle decides; pricing catalog changes never perform retroactive repricing. |
-| PS-OPEN-09 | Are tier create/update/delete controlled by dedicated permissions, or should one service-update permission cover tier management? | Keep explicit tier permissions for least privilege pending approval. |
 | PS-OPEN-10 | Is there an approved upper bound for order quantity, price and total beyond database capacity? | Use decimal precision and positive integer validation with a documented maximum before implementation. |
-| PS-OPEN-11 | How should live service-name uniqueness handle case, repeated internal spaces and Unicode normalization? | Trim outer whitespace, use a consistent DB collation and canonical generated/indexed live-name strategy. |
+| PS-OPEN-11 | Case-sensitive names are already approved by PS-029. Should repeated **internal whitespace** and different **Unicode normalization forms** count as the same name? | Trim outer whitespace and preserve letter case; finalize internal whitespace and Unicode normalization with explicit tests before migration. |
 
 ## 20. Acceptance criteria and feature-test scenarios
 
@@ -522,9 +523,9 @@ These items should be answered during the next review. The rest of this document
 
 1. Create active service with name and basePrice=null, no tiers.
 2. Create a service with basePrice=0.00; retrieve exact zero, not null.
-3. Reject duplicate active/nondeleted name after trimming and configured normalization.
-4. Soft-delete never-used service; create new service using same name successfully.
-5. Reject deletion of service previously used by a persisted order item.
+3. Reject duplicate live exact-case names after trimming; permit Business Cards and business cards to coexist, while rejecting two live Business Cards entries.
+4. Soft-delete a never-used service and all live tiers in one transaction, then create a new service with the exact same name.
+5. Reject deletion when any order item references the service, including draft, cancelled and soft-deleted order/item records.
 6. Deactivate a used service; existing saved orders still display original name/price.
 7. Prevent inactive or soft-deleted service from new-order selects.
 8. Validate required status and reject unsupported pricing-mode/package data.
@@ -564,11 +565,11 @@ These items should be answered during the next review. The rest of this document
 
 34. Unauthenticated management/select requests are rejected.
 35. Authorized view/select access does not automatically grant write permissions.
-36. Permissions enforce service and tier actions independently as finally approved.
+36. Service create permission covers initial tiers; service update permission covers tier add/update/soft-delete; service delete covers eligible service-plus-tier soft deletion. No separate tier permissions.
 37. Shared select registry includes only active/nondeleted printing services and the existing customerTypes selector remains the source for tier type choices.
 38. Existing Identity and Settings tests remain green; new changes do not mutate Settings customer types or customer data.
-39. Settings customer-type Soft Delete is blocked where necessary by future integration references.
-40. A service-delete race with new order creation does not leave an order referencing a deleted service.
+39. Settings customer-type Soft Delete is blocked where necessary by future integration references; the price-preview validates customerTypeId against the actual customer_types group.
+40. A service-delete race with new order creation does not leave an order referencing a deleted service, including persisted draft orders.
 41. Idempotent permission seeds do not fabricate pricing records.
 42. New migrations work on the target MySQL version, including live-name uniqueness and tier concurrency invariants.
 
@@ -583,4 +584,4 @@ These items should be answered during the next review. The rest of this document
 
 **Non-negotiable boundaries:** one printing business; one application and database; no new customer-type table; no selectable price-mode field; positive tier prices; nullable or free base price; no same-bucket constrained overlap; one catch-all fallback per bucket; explicit precedence; historic order price snapshots; no service deletion once used; no changes to customer or order records within the Printing Services module.
 
-**Next phase:** Confirm §19 decisions, approve schema/API proposals, and then create separate implementation plan, tasks and tests. This reference file alone is not the implementation.
+**Next phase:** Confirm outstanding §19 decisions at the relevant module boundary, approve schema/API proposals, then create separate implementation plan, tasks and tests. This reference file alone is not the implementation.
