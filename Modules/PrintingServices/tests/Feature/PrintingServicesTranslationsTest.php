@@ -3,11 +3,14 @@
 namespace Modules\PrintingServices\Tests\Feature;
 
 require_once __DIR__.'/Support/PrintingServiceTestCase.php';
+require_once __DIR__.'/Support/FakeOrderServiceUsageGuard.php';
 
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Modules\PrintingServices\Tests\Feature\Support\PrintingServiceTestCase;
+use Modules\PrintingServices\Tests\Feature\Support\FakeOrderServiceUsageGuard;
+use Modules\PrintingServices\Services\PrintingServiceUsageRegistry;
 
 class PrintingServicesTranslationsTest extends PrintingServiceTestCase
 {
@@ -132,12 +135,13 @@ class PrintingServicesTranslationsTest extends PrintingServiceTestCase
             $table->foreignId('printing_service_id')->constrained('printing_services');
         });
         DB::table('order_items')->insert(['printing_service_id' => $service->id]);
+        app(PrintingServiceUsageRegistry::class)->register(FakeOrderServiceUsageGuard::class);
 
         $this->deleteJson('/api/v1/printing-services/'.$service->id)
             ->assertStatus(409)
             ->assertJsonPath(
                 'message',
-                'لا يمكن حذف خدمة الطباعة لأنها مستخدمة في طلب.',
+                __('printing_services.messages.service_in_use'),
             );
     }
 }

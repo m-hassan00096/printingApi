@@ -3,6 +3,7 @@
 namespace Modules\PrintingServices\Tests\Feature;
 
 require_once __DIR__.'/Support/PrintingServiceTestCase.php';
+require_once __DIR__.'/Support/FakeOrderServiceUsageGuard.php';
 
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -11,8 +12,7 @@ use Modules\Identity\Enums\UserStatus;
 use Modules\Identity\Models\User;
 use Modules\PrintingServices\Enums\PrintingServiceStatus;
 use Modules\PrintingServices\Models\PrintingService;
-use Modules\PrintingServices\Contracts\PrintingServiceUsageGuard;
-use Modules\PrintingServices\Exceptions\ServiceInUseException;
+use Modules\PrintingServices\Tests\Feature\Support\FakeOrderServiceUsageGuard;
 use Modules\PrintingServices\Services\PrintingServiceUsageRegistry;
 use Modules\PrintingServices\Tests\Feature\Support\PrintingServiceTestCase;
 
@@ -282,19 +282,4 @@ class PrintingServicesCrudTest extends PrintingServiceTestCase
     }
 }
 
-/**
- * This simulates the future Orders module's adapter, not production logic.
- * It deliberately includes soft-deleted order items as historical usage.
- */
-class FakeOrderServiceUsageGuard implements PrintingServiceUsageGuard
-{
-    public function assertCanDelete(PrintingService $service): void
-    {
-        if (DB::table('order_items')
-            ->where('printing_service_id', $service->id)
-            ->exists()) {
-            throw new ServiceInUseException();
-        }
-    }
-}
 

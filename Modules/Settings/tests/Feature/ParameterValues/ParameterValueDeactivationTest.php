@@ -119,11 +119,19 @@ class FakeCurrentCustomerGuard implements ParameterValueDeactivationGuard
         if (DB::table('test_current_customers')
             ->where('customer_type_id', $value->id)
             ->exists()) {
-            throw new BusinessException(
-                __('settings.customer_type_has_current_customers'),
-                HttpStatusCode::CONFLICT,
-            );
+            throw new FakeCurrentCustomerInUseException();
         }
+    }
+}
+
+class FakeCurrentCustomerInUseException extends BusinessException
+{
+    public function __construct()
+    {
+        parent::__construct(
+            __('settings.customer_type_has_current_customers'),
+            HttpStatusCode::CONFLICT,
+        );
     }
 }
 
