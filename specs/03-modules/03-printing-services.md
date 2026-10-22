@@ -3,13 +3,13 @@
 > **Document type:** Module Reference — functional requirements and proposed technical contracts only  
 > **Location:** specs/03-modules/03-printing-services.md  
 > **Branch:** feature/printing-services  
-> **Status:** Owner-approved requirements; initial implementation exists on the feature branch, **pending PHPUnit and MySQL verification**. Remaining cross-module decisions are isolated in §19.  
+> **Status:** Owner-approved functional contract; PrintingServices and Settings extension code implemented on feature branch, with targeted MySQL checks previously passed. New Contracts/Tests require fresh CI verification. Orders/Customers implementation is future work.  
 > **Scope:** Internal printing-service catalog, customer-type/quantity pricing, and pricing contracts for future order items  
 > **Stack:** Laravel 13 · React SPA · Sanctum stateful authentication · Spatie Laravel Permission · MySQL · nwidart/laravel-modules  
 > **Language:** Arabic API locale currently; technical identifiers and API fields in English  
 > **Source of customer types:** Settings technical parameter group customer_types, through parameter_values
 
-This reference records the agreed business rules, API contract, examples and acceptance tests. Initial module code, routes and migrations now exist on the feature branch, but **their runtime behavior has not yet been verified by a local test execution**. Cross-module Orders integration remains future work. Implementation plans and tasks are separate artifacts.
+This reference records approved business rules and the implementation contract. Owner-reported PHPUnit tests and targeted MySQL CI were previously green. Newly added modular usage/deactivation extensions are being verified; the future Orders/Customers module code and data tables do not exist yet.
 
 ## 1. Purpose and ownership
 
@@ -308,7 +308,7 @@ The service status is persisted and cast to \`PrintingServiceStatus\`. Tier \`ac
 
 - A service **never referenced by any persisted order item** may be soft-deleted.
 - Any persisted order item reference blocks deletion, including draft/cancelled/completed or soft-deleted order histories. Deactivation is allowed. An unsaved frontend form is not a persisted order item.
-- Orders must implement the historic-use check at integration time; a missing Orders table today does not mean the protection has been implemented.
+- The existing `DeletePrintingServiceAction` delegates to a PrintingServices-owned `PrintingServiceUsageRegistry` and no longer accesses `Schema::hasTable('order_items')` or queries Orders tables directly. Once Orders exists, its own provider registers an `OrderPrintingServiceUsageGuard` implementing `PrintingServiceUsageGuard`, which checks **all persisted** order items including draft/cancelled and Soft Deleted histories. No Orders guard is registered yet because Orders does not exist; the integration must be completed before the first order item can be saved.
 - An eligible never-used service and **all its live child tiers** are soft-deleted in the same transaction.
 - Soft-deleted service names become reusable; deleted services/tiers are not selectable for new orders.
 - No hard-deletion of order items, tier snapshots or service rows; no restore endpoint in v1.
@@ -585,7 +585,7 @@ The management permissions above reflect the agreed boundaries. Selector and pre
 1. Use transactions for service creation with initial tiers and **all service update requests containing tier action commands**, rolling back the whole service metadata and tier update on any error.
 2. In the service update transaction lock the stable **parent printing service row** with `lockForUpdate()`, reread live tiers, apply the full submitted command set logically, and validate the **final active tier set** after acquiring the lock. This serializes concurrent edits for the same service and prevents stale overlap checks; verify on real MySQL.
 3. Price preview must ignore soft-deleted services/tiers and treat active/inactive correctly. Do not rely on cached frontend rules for authoritative saved orders.
-4. A service delete and concurrent order-item creation must be synchronized by the appropriate Orders/Services integration contract, preventing a never-used check from racing a new order link.
+4. `DeletePrintingServiceAction` holds `lockForUpdate()` on the service row and invokes registered `PrintingServiceUsageGuard` implementations before any Soft Delete. The future Orders module must register its own guard and acquire the **same service row lock** during order item creation/reassignment, rejecting inactive/deleted services and preventing deletion/create races. Until Orders exists, the contract is registered but the Orders guard is intentionally absent. Refer to `04-orders-integration-contract.md`.
 5. **Case-sensitive** uniqueness of live service names requires an actual MySQL-safe constraint, not just app-level validation. Test same-case concurrent creation and coexistence of case-different names.
 6. Customer-type classification must be verified against Settings before a new tier is saved, and at the Orders boundary when selecting the applicable prices.
 6a. `PrintingServices` registers an implementation of the Settings-owned `ParameterValueUsageGuard` with its Registry. Settings invokes registered guards inside its locked parameter-value delete Transaction, without importing PrintingServices. Any live or Soft Deleted price-tier reference to a customer type **blocks** its Soft Delete with HTTP 409.
@@ -611,7 +611,7 @@ The owner closed **PS-OPEN-01/04/05/09** via PS-025–PS-028 and **PS-OPEN-06/10
 |---|---|---|
 | PS-OPEN-02 | What may an employee enter as a manual final total: is 0.00 allowed, and is an override reason required? | Allow nonnegative amount with two decimals; record override state; ask about mandatory reason in Orders. |
 | PS-OPEN-03 | If an order's **customer/type or service** changes, should a previous manual override reset just as when quantity changes? | Recalculate and clear override whenever any price-determining input changes. |
-| PS-OPEN-07 | **Soft Delete is protected:** when any current or soft-deleted printing price tier references a customer type, Settings blocks its Soft Delete (now implemented on the feature branch). **Open:** whether the type may be deactivated while used in pricing tiers, independent of existing Customer associations. | Do not infer a new deactivation policy from the deletion guard; decide jointly with Settings/Customers. |
+| PS-OPEN-07 | **Resolved:** pricing tiers alone do not prevent customer-type INACTIVE; tier history is preserved and Soft Delete remains prohibited. A customer type assigned to current customers cannot be deactivated (existing Settings rule). | Settings now calls deactivation guards inside the locked update transaction. Future Customers registers the live association guard before any customer-type writes are exposed. |
 | PS-OPEN-08 | At which Orders status/transition does the agreed price snapshot become immutable; can a draft be repriced explicitly? | Order lifecycle decides; pricing catalog changes never perform retroactive repricing. |
 | PS-OPEN-11 | Case sensitivity and whitespace normalization are approved in PS-029/PS-032. Should canonically equivalent Unicode representations (e.g. NFC vs NFD) compare as identical? | Treat this as a technical normalization/collation decision to resolve before implementing the live-only unique index; do not change letter case. |
 
