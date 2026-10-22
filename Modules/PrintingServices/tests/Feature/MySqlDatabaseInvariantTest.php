@@ -3,7 +3,7 @@
 namespace Modules\PrintingServices\Tests\Feature;
 
 use Illuminate\Database\QueryException;
-use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Config;
 use Modules\PrintingServices\Support\ServiceName;
@@ -13,12 +13,11 @@ use Tests\TestCase;
  * Runs against disposable MySQL only. SQLite tests cannot prove InnoDB row
  * locking or the production unique index and case-sensitivity behavior.
  *
- * CI uses a dedicated MySQL database. Never point this suite at production.
+ * CI uses a dedicated MySQL database and recreates its schema PER TEST.
+ * DESTRUCTIVE: never run this test class against development/production data.
  */
 class MySqlDatabaseInvariantTest extends TestCase
 {
-    use DatabaseMigrations;
-
     protected function setUp(): void
     {
         parent::setUp();
@@ -26,6 +25,12 @@ class MySqlDatabaseInvariantTest extends TestCase
         if (DB::getDriverName() !== 'mysql') {
             $this->markTestSkipped('MySQL/InnoDB is required for database invariants.');
         }
+
+        // Run ONLY on a disposable database. The Identity migrations currently
+        // cannot be individually rolled back on MySQL because of dependent
+        // translation foreign keys. migrate:fresh disables FK checks while
+        // dropping tables, and recreates the whole schema before each test.
+        $this->assertSame(0, Artisan::call('migrate:fresh', ['--force' => true]));
     }
 
     public function test_live_name_unique_index_allows_case_difference_and_soft_delete_reuse(): void
