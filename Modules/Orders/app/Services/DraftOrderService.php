@@ -109,11 +109,31 @@ class DraftOrderService
                     (int) ($data['serviceId'] ?? $item->printing_service_id),
                 );
 
-                $this->pricing->applyItem($item, $locked, $service, [
+                $updated = [
                     'quantity' => $data['quantity'] ?? $item->quantity,
                     'agreedTotal' => $data['agreedTotal'] ?? $item->agreed_total,
                     'specifications' => $data['specifications'] ?? $item->specifications,
-                ]);
+                ];
+
+                if ($service->id !== (int) $item->printing_service_id) {
+                    // Preserve every historic service reference/snapshot. A
+                    // changed service is a new order item, never an in-place
+                    // reassignment that would free the old service for deletion.
+                    $oldItemId = $item->id;
+                    $replacement = new OrderItem();
+                    $this->pricing->applyItem($replacement, $locked, $service, $updated);
+                    $replacement->production_stage = OrderItemStage::NOT_STARTED;
+                    $locked->items()->save($replacement);
+                    $item->files()->update(['order_item_id' => $replacement->id]);
+                    $item->delete();
+                    $item = $replacement;
+                    $this->activities->record($locked, 'item_service_replaced', [
+                        'previousItemId' => $oldItemId,
+                        'newItemId' => $replacement->id,
+                    ]);
+                } else {
+                    $this->pricing->applyItem($item, $locked, $service, $updated);
+                }
             } else {
                 if (array_key_exists('specifications', $data)) {
                     $item->specifications = $data['specifications'];
