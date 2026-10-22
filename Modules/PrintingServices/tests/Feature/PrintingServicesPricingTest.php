@@ -77,7 +77,7 @@ class PrintingServicesPricingTest extends PrintingServiceTestCase
             'priceTiers' => [[
                 'customerTypeId' => 999999, 'price' => '10.00',
             ]],
-        ]))->assertUnprocessable()->assertJsonValidationErrors('customerTypeId');
+        ]))->assertUnprocessable()->assertJsonValidationErrors('priceTiers.0.customerTypeId');
     }
 
     public function test_active_services_are_registered_in_shared_select_aggregator(): void

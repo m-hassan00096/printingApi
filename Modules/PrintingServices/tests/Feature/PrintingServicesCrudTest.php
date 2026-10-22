@@ -4,6 +4,9 @@ namespace Modules\PrintingServices\Tests\Feature;
 
 require_once __DIR__.'/Support/PrintingServiceTestCase.php';
 
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Modules\Identity\Enums\UserStatus;
 use Modules\Identity\Models\User;
 use Modules\PrintingServices\Enums\PrintingServiceStatus;
@@ -154,6 +157,105 @@ class PrintingServicesCrudTest extends PrintingServiceTestCase
             ->assertJsonPath('data.printingServices.0.name', 'Posters');
         $this->getJson('/api/v1/printing-services?filter[price]=10')
             ->assertUnprocessable();
+    }
+
+
+    public function test_name_search_escapes_percent_and_underscore_literals(): void
+    {
+        $this->service(['name' => 'Promo % Flyers']);
+        $this->service(['name' => 'Promo_Posters']);
+        $this->service(['name' => 'Promo Posters']);
+
+        $percent = http_build_query(['filter' => ['search' => '%']]);
+        $this->getJson('/api/v1/printing-services?'.$percent)
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.printingServices.0.name', 'Promo % Flyers');
+
+        $underscore = http_build_query(['filter' => ['search' => '_']]);
+        $this->getJson('/api/v1/printing-services?'.$underscore)
+            ->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.printingServices.0.name', 'Promo_Posters');
+    }
+
+    public function test_soft_deleted_order_item_still_blocks_service_deletion(): void
+    {
+        // Isolated contract fixture until the Orders module defines its schema.
+        $service = $this->service();
+        Schema::create('order_items', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('printing_service_id')->constrained('printing_services');
+            $table->softDeletes();
+        });
+        DB::table('order_items')->insert([
+            'printing_service_id' => $service->id,
+            'deleted_at' => now(),
+        ]);
+
+        $this->deleteJson('/api/v1/printing-services/'.$service->id)->assertStatus(409);
+
+        $this->assertDatabaseHas('printing_services', [
+            'id' => $service->id,
+            'deleted_at' => null,
+        ]);
+    }
+
+    public function test_swapping_tier_ranges_in_one_request_validates_the_final_state(): void
+    {
+        $service = $this->service();
+        $first = $this->tier($service, [
+            'min_quantity' => 1, 'max_quantity' => 100, 'price' => '7.00',
+        ]);
+        $second = $this->tier($service, [
+            'min_quantity' => 101, 'max_quantity' => 200, 'price' => '6.00',
+        ]);
+
+        $this->patchJson('/api/v1/printing-services/'.$service->id, [
+            'priceTiers' => [
+                [
+                    'actionStatus' => 2, 'priceTierId' => $first,
+                    'customerTypeId' => null, 'minQuantity' => 101,
+                    'maxQuantity' => 200, 'price' => '7.00',
+                ],
+                [
+                    'actionStatus' => 2, 'priceTierId' => $second,
+                    'customerTypeId' => null, 'minQuantity' => 1,
+                    'maxQuantity' => 100, 'price' => '6.00',
+                ],
+            ],
+        ])->assertOk();
+
+        $this->assertDatabaseHas('printing_service_price_tiers', [
+            'id' => $first, 'min_quantity' => 101, 'max_quantity' => 200,
+        ]);
+        $this->assertDatabaseHas('printing_service_price_tiers', [
+            'id' => $second, 'min_quantity' => 1, 'max_quantity' => 100,
+        ]);
+    }
+
+    public function test_tier_type_error_points_to_the_correct_row_and_rolls_back_rename(): void
+    {
+        $service = $this->service();
+        $id = $this->tier($service);
+
+        $this->patchJson('/api/v1/printing-services/'.$service->id, [
+            'name' => 'Uncommitted Rename',
+            'priceTiers' => [[
+                'actionStatus' => 2,
+                'priceTierId' => $id,
+                'customerTypeId' => 999999,
+                'minQuantity' => 100,
+                'maxQuantity' => 500,
+                'price' => '5.00',
+            ]],
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors('priceTiers.0.customerTypeId');
+
+        $this->assertDatabaseHas('printing_services', [
+            'id' => $service->id,
+            'name' => 'Business Cards',
+        ]);
     }
 
     public function test_guest_and_staff_without_permissions_are_rejected(): void
