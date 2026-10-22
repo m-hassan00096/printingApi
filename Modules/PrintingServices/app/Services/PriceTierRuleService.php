@@ -4,10 +4,20 @@ namespace Modules\PrintingServices\Services;
 
 use Illuminate\Validation\ValidationException;
 use Modules\Settings\Enums\ParameterValueStatus;
+use Modules\PrintingServices\Support\Money;
 use Modules\Settings\Models\ParameterValue;
 
 final class PriceTierRuleService
 {
+    public function assertPrice(mixed $price): void
+    {
+        if (! Money::valid($price, false)) {
+            throw ValidationException::withMessages([
+                'priceTiers' => 'Tier price must be strictly greater than zero and have at most two decimal places.',
+            ]);
+        }
+    }
+
     public function assertCustomerType(?int $customerTypeId): void
     {
         if ($customerTypeId === null) {
