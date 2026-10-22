@@ -3,7 +3,7 @@
 > **Project:** طَبعة / Tabaa  
 > **Branch:** `feature/customers`  
 > **Target:** `develop`  
-> **Status:** Initial spec for the next module; **no Customers implementation exists yet**.  
+> **Status:** Decisions in progress; **no Customers implementation exists yet**. This module-named file `05-customers.md` is the requirements/spec artifact to finalize and approve before writing code.  
 > **Stack:** Laravel 13 API, MySQL, nwidart/laravel-modules, stateful Sanctum, Spatie Permissions, Spatie Query Builder.  
 > **Language convention:** All translatable/error/validation messages belong in `lang/ar/customers.php` and `lang/en/customers.php`; use translation keys only in code.
 
@@ -42,8 +42,9 @@ Customers owns the **registered customer profile**, current Settings customer-ty
 | CUS-019 | Customer profile fields (including name, phone and customer type) **remain editable when the customer is INACTIVE**; valid type assignment and phone uniqueness checks still apply. |
 | CUS-020 | Staff may edit customer **name and phone even after prior Orders or financial movements**. Historical Orders must retain appropriate order-time display snapshots, and financial records must preserve their posted transaction facts; editing a current customer profile never silently changes saved transaction data. |
 | CUS-021 | **Customer names may repeat**. Do not add a unique constraint on `customers.name`; distinguish customers using their unique phone and ID. |
-| CUS-022 | An ACTIVE customer **must not be deactivated while they have an order in production**. Orders is the owning module and will enforce this via a Customers-owned status-transition guard when Orders is implemented. The exact blocking statuses (e.g. design/printing/ready for delivery) remain to be agreed. |
+| CUS-022 | An ACTIVE customer **must not be deactivated while any persisted order has not yet been delivered**, including not-started, design, printing, partially ready and ready-for-delivery orders. Orders will own the check via a Customers-owned transition-guard contract when implemented. Cancellation semantics still need an explicit decision. |
 | CUS-023 | **Phone equality uses the trimmed input as-is**, without stripping internal spaces, hyphens or prefixes. For example, `01012345678` and `010 12345678` are **distinct** values. Database uniqueness and server validation must follow the same comparison policy. |
+| CUS-024 | A **Soft Deleted customer with no Orders or financial movements** does not alone prevent Soft Deleting their former Settings customer type. **Current customers** and other surviving/historical references (e.g. PrintingServices price tiers) must still be checked by their respective guards. |
 
 ## 3. Proposed minimal Customers v1 data model
 
@@ -67,11 +68,11 @@ No extra personal fields, company/tax entities, contact persons, multiple addres
 - **CUS-OPEN-01 — Resolved:** phone is unique among live customers and can be reused after Soft Delete. Only trim leading/trailing whitespace, then compare literally: no removal of interior spaces or punctuation, no national/international regex. Persist as a string; ensure the DB unique constraint has the same comparison behavior.
 - **CUS-OPEN-02:** **Optional single address approved.** A single required phone is approved for v1; no multiple contact fields are requested.
 - **CUS-OPEN-03 — Resolved:** customer is Soft Deleted **only if never linked to Orders or financial movements**; its phone becomes available after Soft Delete. Real Orders/Finance usage guards are deferred to those modules, and must be implemented before those modules persist references.
-- **CUS-OPEN-04 — Partially resolved:** frontend supplies explicit customer status on creation (no silent backend default). INACTIVE blocks new Orders and permits profile updates, historical viewing and Finance collection of existing dues. **New approved restriction:** an ACTIVE customer with an order in production must not transition to INACTIVE. The exact statuses counted as 'in production' need confirmation before the requirements are finalized; Orders will own the status check.
+- **CUS-OPEN-04 — Resolved core behavior:** frontend supplies explicit status on creation. INACTIVE blocks new Orders but permits profile updates, historical viewing and collecting existing dues. ACTIVE → INACTIVE is blocked if the customer has **any not-yet-delivered order** (not-started, design, printing, partially ready, ready for delivery). Orders must implement this guard when orders are first persisted. Treatment of a cancelled undelivered order is a separate lifecycle clarification.
 - **CUS-OPEN-05 — Resolved:** `filter[search]` matches customer name OR phone only. `filter[customerTypeId]` and `filter[status]` are separate filters; do not search customer-type name via text. QueryBuilder must allowlist only supported filters.
 - **CUS-OPEN-06:** Does opening account debt/credit get entered during registration or as a separate authorized Finance action? Current customer create/edit screenshots have no debt field. In either workflow, the eventual transaction must be a **Finance ledger movement**, not a mutable Customer column. No initial-balance posting will be implemented as part of Customers CRUD without an approved separate Finance contract.
-- **CUS-OPEN-07:** Which precise Orders stages block customer deactivation: only design/printing, or **every non-delivered order**, including not-started and ready-to-deliver?
-- **CUS-OPEN-08:** When a customer is Soft Deleted without Orders/financial movements, does their historical assignment still prevent Soft Deleting that Settings customer type? Existing proposed `withTrashed()` guard says yes; confirm whether this is desired.
+- **CUS-OPEN-07 — Resolved:** **any undelivered order** blocks customer deactivation, including not-started and ready-to-deliver (not limited to the active production stages). The future Orders status model must define terminal cancellation treatment separately.
+- **CUS-OPEN-08 — Resolved:** a customer previously Soft Deleted (and therefore never referenced by Orders or Finance) does **not** reserve the former customer type. Settings may Soft Delete that type if no live customer, price tier or other referencing module blocks it. Keep the physical FK for historical identity; the protection is business-level Soft Delete, not hard delete.
 
 ## 3.1 UI reference — owner's six screenshots, 2026-10-22
 
@@ -89,8 +90,8 @@ The screenshots are requirements references, not evidence that dependent Orders/
 ### 4.1 CustomerTypeUsageGuard (deletion)
 
 - Implement Settings' existing `ParameterValueUsageGuard`, registered **from the Customers service provider**, never imported by Settings.
-- For parameter group `customer_types`: if any current or historically retained Customer row references the type, block Soft Delete with a localized BusinessException (HTTP 409).
-- Unlike a physical FK, this guard protects Settings Soft Delete. If Customers itself uses Soft Delete, define historical associations via `withTrashed()` so deleting a customer cannot erase the reference check.
+- For parameter group `customer_types`: if **any non-Soft Deleted customer** currently references the type, block its Soft Delete with a localized BusinessException (HTTP 409). The Settings registry will separately ask PrintingServices (and future owners) to verify other references.
+- Unlike a physical FK, this guard protects Settings Soft Delete. **Do not use `withTrashed()` in the Customers usage guard:** the owner explicitly permits freeing a type when its only prior customer has been Soft Deleted with no Orders/financial history. Other modules remain responsible for their historical references. No physical deletion/cascading of type or customer rows.
 
 ### 4.2 CustomerTypeDeactivationGuard (deactivation)
 
@@ -110,7 +111,7 @@ The screenshots are requirements references, not evidence that dependent Orders/
 - Customers owns the customer's ACTIVE/INACTIVE field and the customer status transition. The new business rule prevents ACTIVE → INACTIVE when the customer has an **in-production order**.
 - Orders will own the authoritative check of its order statuses and expose a registered customer-status transition guard. **No Orders tables exist in Customers v1**, so don't hard-code an `orders` table check in the Customers module, and don't claim the future reference rule is already enforced by a nonexistent Orders module.
 - Customers must provide the appropriate guard extension in its eventual design; when Orders is introduced, its provider must register the real guard **before writing actual orders**, and customer-status changes and order lifecycle updates must synchronize their transactions to prevent races.
-- The precise blocking statuses must be finalized before the `requirements.md` is approved. Inactive customers remain editable and can settle old financial debts.
+- **Any order not delivered blocks deactivation**, including not-started, design, printing, partially ready and ready to deliver. An already delivered order does not block a customer's transition to INACTIVE; it **does** prevent deleting the customer. A cancelled undelivered order's terminal-state semantics remain to be clarified. Inactive customers remain editable and can settle old financial debts.
 
 ## 5. API and authorization — proposed v1 boundary
 
@@ -158,7 +159,7 @@ Reuse existing Settings' `ParameterValueUsageRegistry` (do not duplicate it), Id
 2. Reject missing/invalid/wrong-group/inactive/Soft Deleted customer-type IDs; no customer row persists after failed validation.
 3. Changing customer type succeeds for a valid type, without touching orders or pricing tier records.
 4. Registered customer prevents Settings customer-type **deactivation** (409); an unassigned type may deactivate even if PrintingServices has only tier references.
-5. Current and historically Soft Deleted customer associations block Settings type Soft Delete (409), without affecting other lookup groups.
+5. Current (non-Soft Deleted) customer associations block Settings type Soft Delete (409). If every customer referencing a type was Soft Deleted (and no other module references it), the type is eligible for Soft Delete; other lookup groups are unaffected.
 6. Customer create/reassign and Settings deactivate/delete use the **same locked type row**; cover MySQL concurrency with independent DB connections.
 7. Customer management endpoints enforce `auth:sanctum` and explicit create/view/update/delete permissions; unauthorized identities return 401/403.
 8. All validation/BusinessException text comes from `lang/ar/customers.php`, `lang/en/customers.php` (or the owning Settings language file); Arabic/English tests verify messages.
@@ -167,7 +168,7 @@ Reuse existing Settings' `ParameterValueUsageRegistry` (do not duplicate it), Id
 
 ## 8. Suggested implementation order
 
-1. Confirm outstanding profile constraints (especially phone uniqueness, address optionality, and deletion rules).
+1. Finish remaining decisions and **approve this module-named requirements file** (`05-customers.md`) before writing any Customers code.
 2. Add module skeleton, model/migration, authorized CRUD, requests/resources, Arabic/English catalogs and module tests.
 3. Implement/verify Settings deletion and deactivation guards, with transaction locking.
 4. Add customer select registration and permission seeders; rerun entire SQLite suite, MySQL migration/concurrency probes and code review.
