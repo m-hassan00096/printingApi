@@ -2,6 +2,7 @@
 
 namespace Modules\PrintingServices\Actions;
 
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Modules\PrintingServices\Models\PrintingService;
@@ -14,7 +15,8 @@ class CreatePrintingServiceAction
 
     public function execute(array $data): PrintingService
     {
-        return DB::transaction(function () use ($data): PrintingService {
+        try {
+            return DB::transaction(function () use ($data): PrintingService {
             $name = ServiceName::normalize($data['name']);
             $service = new PrintingService();
             $service->fill([
@@ -48,7 +50,12 @@ class CreatePrintingServiceAction
             }
 
             return $service->load('priceTiers');
-        }, 3);
+            }, 3);
+        } catch (UniqueConstraintViolationException $exception) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'name' => 'The service name is already in use.',
+            ]);
+        }
     }
 }
 
