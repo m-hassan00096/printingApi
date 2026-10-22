@@ -1,0 +1,10 @@
+{
+  "name": "tabaa/orders",
+  "type": "laravel-module",
+  "autoload": {
+    "psr-4": {
+      "Modules\\Orders\\": "app/",
+      "Modules\\Orders\\Database\\Seeders\\": "database/seeders/"
+    }
+  }
+}

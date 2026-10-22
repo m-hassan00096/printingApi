@@ -1,0 +1,11 @@
+{
+  "name": "Orders",
+  "alias": "orders",
+  "description": "Tabaa order drafts, pricing snapshots and lifecycle contracts",
+  "keywords": [],
+  "priority": 0,
+  "providers": [
+    "Modules\\Orders\\Providers\\OrdersServiceProvider"
+  ],
+  "files": []
+}
