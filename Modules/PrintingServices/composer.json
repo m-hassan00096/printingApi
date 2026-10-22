@@ -1,0 +1,15 @@
+{
+    "name": "nwidart/printing-services",
+    "description": "Tabaa Printing Services module",
+    "autoload": {
+        "psr-4": {
+            "Modules\\PrintingServices\\": "app/",
+            "Modules\\PrintingServices\\Database\\Seeders\\": "database/seeders/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Modules\\PrintingServices\\Tests\\": "tests/"
+        }
+    }
+}
