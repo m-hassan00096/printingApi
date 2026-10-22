@@ -21,6 +21,10 @@
             <directory>Modules/PrintingServices/tests</directory>
         </testsuite>
 
+        <testsuite name="Customers Module">
+            <directory>Modules/Customers/tests</directory>
+        </testsuite>
+
         <testsuite name="Settings Module">
             <directory>Modules/Settings/tests</directory>
         </testsuite>

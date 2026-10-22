@@ -1,0 +1,9 @@
+{
+  "name": "Customers",
+  "alias": "customers",
+  "description": "Tabaa registered customers and customer-type associations",
+  "keywords": [],
+  "priority": 0,
+  "providers": ["Modules\\Customers\\Providers\\CustomersServiceProvider"],
+  "files": []
+}
