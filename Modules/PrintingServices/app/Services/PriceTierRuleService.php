@@ -9,16 +9,16 @@ use Modules\Settings\Models\ParameterValue;
 
 final class PriceTierRuleService
 {
-    public function assertPrice(mixed $price): void
+    public function assertPrice(mixed $price, string $field = 'priceTiers'): void
     {
         if (! Money::valid($price, false)) {
             throw ValidationException::withMessages([
-                'priceTiers' => 'Tier price must be strictly greater than zero and have at most two decimal places.',
+                $field => 'Tier price must be strictly greater than zero and have at most two decimal places.',
             ]);
         }
     }
 
-    public function assertCustomerType(?int $customerTypeId): void
+    public function assertCustomerType(?int $customerTypeId, string $field = 'customerTypeId'): void
     {
         if ($customerTypeId === null) {
             return;
@@ -32,7 +32,7 @@ final class PriceTierRuleService
 
         if (! $exists) {
             throw ValidationException::withMessages([
-                'customerTypeId' => 'Customer type must be an active Settings customer type.',
+                $field => 'Customer type must be an active Settings customer type.',
             ]);
         }
     }

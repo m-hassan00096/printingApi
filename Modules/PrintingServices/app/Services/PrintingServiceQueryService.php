@@ -16,7 +16,9 @@ class PrintingServiceQueryService
         return QueryBuilder::for(PrintingService::query(), $request)
             ->allowedFilters(
                 AllowedFilter::callback('search', function (Builder $query, mixed $value): void {
-                    $query->where('name', 'like', '%'.(string) $value.'%');
+                    // Escape LIKE metacharacters so search is a literal name substring.
+                    $search = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], (string) $value);
+                    $query->whereRaw("name LIKE ? ESCAPE '!'", ['%'.$search.'%']);
                 }),
                 AllowedFilter::exact('status'),
             )

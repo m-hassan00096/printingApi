@@ -32,7 +32,7 @@ class UpdatePrintingServiceAction
             $commands = $data['priceTiers'] ?? [];
             $seen = [];
             $new = 0;
-            foreach ($commands as $command) {
+            foreach ($commands as $index => $command) {
                 $action = PriceTierActionStatus::from((int) $command['actionStatus']);
                 if ($action === PriceTierActionStatus::UNCHANGED && ! isset($command['priceTierId'])) {
                     continue;
@@ -59,9 +59,9 @@ class UpdatePrintingServiceAction
                     continue;
                 }
 
-                $this->tierRules->assertPrice($command['price']);
+                $this->tierRules->assertPrice($command['price'], "priceTiers.{$index}.price");
                 $typeId = isset($command['customerTypeId']) ? (int) $command['customerTypeId'] : null;
-                $this->tierRules->assertCustomerType($typeId);
+                $this->tierRules->assertCustomerType($typeId, "priceTiers.{$index}.customerTypeId");
                 $entry = [
                     'customerTypeId' => $typeId,
                     'minQuantity' => isset($command['minQuantity']) ? (int) $command['minQuantity'] : null,
