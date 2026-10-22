@@ -146,6 +146,41 @@ class CustomerTypeUsageIntegrationTest extends PrintingServiceTestCase
             ->assertStatus(409);
     }
 
+
+    public function test_customer_type_with_only_price_tiers_can_be_deactivated_and_reactivated(): void
+    {
+        // Pricing references block deletion, not deactivation. Customer
+        // relationships are checked by a future Customers-owned guard.
+        $this->adminRole->givePermissionTo(
+            Permission::findOrCreate('settings.update_parameter_value', 'web'),
+        );
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $service = $this->service();
+        $tierId = $this->tier($service, [
+            'customer_type_id' => $this->wholesale->id,
+        ]);
+
+        $this->patchJson(
+            '/api/v1/settings/parameter-values/'.$this->wholesale->id,
+            ['status' => ParameterValueStatus::INACTIVE->value],
+        )->assertOk()->assertJsonPath('data.status', 0);
+
+        $this->assertDatabaseHas('printing_service_price_tiers', [
+            'id' => $tierId,
+            'customer_type_id' => $this->wholesale->id,
+            'deleted_at' => null,
+        ]);
+
+        $this->deleteJson($this->deleteUrl($this->wholesale->id))
+            ->assertStatus(409);
+
+        $this->patchJson(
+            '/api/v1/settings/parameter-values/'.$this->wholesale->id,
+            ['status' => ParameterValueStatus::ACTIVE->value],
+        )->assertOk()->assertJsonPath('data.status', 1);
+    }
+
     private function deleteUrl(int $id): string
     {
         return '/api/v1/settings/parameter-values/'.$id;

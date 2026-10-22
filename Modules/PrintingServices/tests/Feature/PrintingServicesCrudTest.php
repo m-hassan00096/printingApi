@@ -11,6 +11,9 @@ use Modules\Identity\Enums\UserStatus;
 use Modules\Identity\Models\User;
 use Modules\PrintingServices\Enums\PrintingServiceStatus;
 use Modules\PrintingServices\Models\PrintingService;
+use Modules\PrintingServices\Contracts\PrintingServiceUsageGuard;
+use Modules\PrintingServices\Exceptions\ServiceInUseException;
+use Modules\PrintingServices\Services\PrintingServiceUsageRegistry;
 use Modules\PrintingServices\Tests\Feature\Support\PrintingServiceTestCase;
 
 class PrintingServicesCrudTest extends PrintingServiceTestCase
@@ -193,6 +196,10 @@ class PrintingServicesCrudTest extends PrintingServiceTestCase
             'deleted_at' => now(),
         ]);
 
+        // Simulate Orders registering its own usage guard. The production
+        // PrintingServices module itself never reads the Orders table.
+        app(PrintingServiceUsageRegistry::class)->register(FakeOrderServiceUsageGuard::class);
+
         $this->deleteJson('/api/v1/printing-services/'.$service->id)->assertStatus(409);
 
         $this->assertDatabaseHas('printing_services', [
@@ -272,6 +279,22 @@ class PrintingServicesCrudTest extends PrintingServiceTestCase
         $staff->assignRole($this->staffRole);
         $this->login($staff);
         $this->postJson('/api/v1/printing-services', $this->payload())->assertForbidden();
+    }
+}
+
+/**
+ * This simulates the future Orders module's adapter, not production logic.
+ * It deliberately includes soft-deleted order items as historical usage.
+ */
+class FakeOrderServiceUsageGuard implements PrintingServiceUsageGuard
+{
+    public function assertCanDelete(PrintingService $service): void
+    {
+        if (DB::table('order_items')
+            ->where('printing_service_id', $service->id)
+            ->exists()) {
+            throw new ServiceInUseException();
+        }
     }
 }
 
