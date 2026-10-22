@@ -3,7 +3,7 @@
 > **Project:** طَبعة / Tabaa  
 > **Branch:** `feature/customers`  
 > **Target:** `develop`  
-> **Status:** Business requirements consolidated for **owner final review**; **no Customers implementation exists yet**. `05-customers.md` is the module requirements file. No coding starts before final sign-off.  
+> **Status:** Owner-approved lifecycle/field decisions and concrete v1 API contracts documented; implementation in progress on `feature/customers`. `05-customers.md` is the module requirements artifact.   
 > **Stack:** Laravel 13 API, MySQL, nwidart/laravel-modules, stateful Sanctum, Spatie Permissions, Spatie Query Builder.  
 > **Language convention:** All translatable/error/validation messages belong in `lang/ar/customers.php` and `lang/en/customers.php`; use translation keys only in code.
 
@@ -129,6 +129,111 @@ All routes use `auth:sanctum` and explicit Spatie permissions, with camelCase re
 Use existing Select Aggregator for active customer options; register from Customers provider with a dedicated read permission if one is required, rather than creating a separate Selects module. Define whether inactive/soft-deleted customers should be selectable after CUS-OPEN-03/04.
 
 **Do not create `POST /customers/{id}/payments` or mutate balances in this module.** A later `GET /api/v1/customers/{customer}/ledger` can expose Finance-owned read-only data once Finance is built, with a separate permission and no fake entries.
+
+## 5.1 Approved API contracts — Customers v1
+
+> Approved for implementing the module after the decisions above were finalized. No Orders or Finance APIs are implemented as part of this contract. The samples describe response **shapes**, not actual saved customer records.
+
+### Authentication and permissions
+
+Every Customers management endpoint is under `auth:sanctum`, with `customers.view`, `customers.create`, `customers.update`, `customers.delete` respectively. The shared selects aggregator exposes `customers` with `customers.selects.view`. No implicit super-admin bypass; Identity RoleSeeder syncs seeded web permissions.
+
+All responses match the app's `ApiResponse` wrapper. Success: `{"success":true,"message":"","data":...}`. Validation: HTTP **422**, `{"success":false,"message":"...","errors":{"field":["..."]}}`; restricted business action: HTTP **409**, same error wrapper; unauthorized **401**; forbidden **403**; unknown or Soft Deleted customer **404**. All messages live in `lang/ar/customers.php` and `lang/en/customers.php`.
+
+### POST /api/v1/customers — 201
+
+Request (camelCase):
+
+```json
+{
+  "name": "أحمد محمد",
+  "phone": "01012345678",
+  "address": "المنصورة",
+  "customerTypeId": 2,
+  "status": 1
+}
+```
+
+`name` required nonblank trimmed string (up to 150 chars); duplicates allowed. `phone` required nonblank trimmed string (up to 100 chars), **unique among live customers** based on the exact trimmed string, with no stripping interior whitespace, case folding or locale-specific phone regex; its exact uniqueness is enforced at DB level and duplicate returns 422 field `phone`. `address` optional nullable string, up to 1000 chars; omitted becomes null. `customerTypeId` required positive integer from the **active and not-deleted** Settings `customer_types` group; update/creation revalidates it while holding the type's DB lock. `status` required integer enum `0=INACTIVE, 1=ACTIVE`, **provided by frontend**, no backend default. Snake_case aliases are not accepted.
+
+Success returns Customer Resource. Example:
+
+```json
+{
+  "success": true,
+  "message": "",
+  "data": {
+    "id": 15,
+    "name": "أحمد محمد",
+    "phone": "01012345678",
+    "address": "المنصورة",
+    "customerTypeId": 2,
+    "customerType": {"id": 2, "name": "عميل جملة"},
+    "status": 1,
+    "statusLabel": "فعال"
+  }
+}
+```
+
+### GET /api/v1/customers — 200
+
+Query parameters:
+- `filter[search]`: optional single literal substring search for **customer name OR phone**, not type name; escape SQL LIKE wildcards.
+- `filter[customerTypeId]`: optional exact positive integer Settings type ID; can include inactive types in historical listing.
+- `filter[status]`: optional exact `0` or `1`.
+- `sort`: allowlist `id`, `name`, `created_at` with optional `-` descending prefix; default `-id`.
+- `page`: positive integer; `perPage`: 1–100, default 15. Unknown filters/sorts rejected.
+
+```json
+{
+  "success": true,
+  "message": "",
+  "data": {
+    "customers": [
+      {
+        "id": 15, "name": "أحمد محمد", "phone": "01012345678",
+        "address": "المنصورة", "customerTypeId": 2,
+        "customerType": {"id": 2, "name": "عميل جملة"},
+        "status": 1, "statusLabel": "فعال"
+      }
+    ],
+    "pagination": {"currentPage": 1, "lastPage": 1, "perPage": 15, "total": 1}
+  }
+}
+```
+
+Ordinary list excludes Soft Deleted customers. **No fake order count or monetary balances**.
+
+### GET /api/v1/customers/{customer} — 200
+
+Returns the same Customer Resource inside `data`. Eager-load customer type to prevent N+1. Unknown/Soft Deleted ID -> 404. No Orders/Finance nested fake data.
+
+### PUT/PATCH /api/v1/customers/{customer} — 200
+
+Partial update: any submitted subset of `name`, `phone`, `address`, `customerTypeId`, `status`; omitted keys unchanged. `name`/`phone`/`customerTypeId`/`status` cannot be null if supplied, `address` may be null. Same phone/type/enum validation as creation, with own ID ignored for phone uniqueness. Example `{"name":"أحمد محمد علي","status":0}`.
+
+- An inactive customer remains editable, including name, phone and type. Historical Orders/Finance facts and name snapshots cannot be rewritten by customer updates.
+- ACTIVE → INACTIVE is blocked with localized **409** if the Orders integration reports at least one **not delivered and not cancelled** order; already cancelled/delivered orders do not block status change. This is an *extension point until Orders is built*; implement an Orders-owned guard from Orders' first deployment, synchronized with the customer row lock.
+- Changing customer type does not recalculate old orders. Type assignment checks active Settings value **inside the DB transaction** under its row lock.
+
+### DELETE /api/v1/customers/{customer} — 200
+
+Soft Delete only if Orders and Finance usage registries report no historical references (including cancelled/completed/Soft Deleted order histories or financial entries). The actual Orders/Finance guards are **future module adapters**, not fake tables in Customers. Customer deletion locks the parent row; their writes must lock the same row when they first implement references.
+
+Success: `{"success":true,"message":"","data":null}`. A prohibited deletion -> localized 409, and the row/phone remains active. A permitted Soft Delete nulls the live-only phone hash and frees the original phone while keeping historical row metadata.
+
+### GET /api/v1/selects?selects=customers
+
+Extend the existing authorized shared Select Aggregator (no extra Customers select endpoint). Select key `customers`, permission `customers.selects.view`, active/not-deleted records only; optional `params[customers]=active` is accepted consistent with other select providers. Response uses existing Select Aggregator shape, with choices of `{"value":15,"label":"أحمد محمد"}`. Duplicate display labels can occur by approved business decision; client always submits `value` ID.
+
+### Cross-module contracts to implement now / later
+
+- **Customers now:** `CustomerStatusTransitionGuard` registry for later Orders to block deactivation, and `CustomerUsageGuard` registry for later Orders/Finance to block customer Soft Delete. Registries are no-ops until adapters are registered.
+- **Customers → Settings now:** register Customers-owned `ParameterValueUsageGuard` for types referenced by **non-deleted** customers; register Customers-owned `ParameterValueDeactivationGuard` for types assigned to current customers. A deleted, never-used customer alone does not block the former type's Soft Delete.
+- **Orders later:** actual order create/reassignment locks customer row and checks ACTIVE; Orders provider registers status/deletion usage guards, handles order snapshots, and serializes delete/deactivate races.
+- **Finance later:** actual customer collection/debt opening entries are separate Finance operations, never part of customer create/update; registers historical-use deletion guard and permits collection from inactive customers.
+
+---
 
 ## 6. Proposed code structure
 
