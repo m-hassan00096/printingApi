@@ -15,7 +15,9 @@ final class ParameterValueUsageRegistry
     public function register(string $guardClass): void
     {
         if (! is_a($guardClass, ParameterValueUsageGuard::class, true)) {
-            throw new InvalidArgumentException("Invalid parameter value usage guard [{$guardClass}].");
+            throw new InvalidArgumentException(
+                __('settings.invalid_parameter_value_usage_guard', ['guard' => $guardClass])
+            );
         }
 
         // Idempotent even if provider boot() runs more than once in a test.
