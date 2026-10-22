@@ -1,0 +1,15 @@
+{
+  "name": "nwidart/customers",
+  "description": "Tabaa Customers module",
+  "autoload": {
+    "psr-4": {
+      "Modules\\Customers\\": "app/",
+      "Modules\\Customers\\Database\\Seeders\\": "database/seeders/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "Modules\\Customers\\Tests\\": "tests/"
+    }
+  }
+}

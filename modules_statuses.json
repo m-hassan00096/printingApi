@@ -1,5 +1,6 @@
 {
     "Identity": true,
     "Settings": true,
-    "PrintingServices": true
+    "PrintingServices": true,
+    "Customers": true
 }
