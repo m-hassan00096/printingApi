@@ -4,6 +4,7 @@ namespace Modules\PrintingServices\Tests\Feature\Support;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Modules\Identity\Enums\RoleStatus;
 use Modules\Identity\Enums\UserStatus;
 use Modules\Identity\Models\Permission;
@@ -71,6 +72,42 @@ abstract class PrintingServiceTestCase extends TestCase
         ]);
 
         $this->login($this->admin);
+    }
+
+    protected function historicalOrderItem(PrintingService $service, bool $softDeleted = false): void
+    {
+        // Orders now owns the real order_items table; old ad-hoc test tables
+        // must not shadow its schema after Orders migrations are installed.
+        $customer = DB::table('customers')->insertGetId([
+            'name' => 'Historic Customer',
+            'phone' => '02012345678',
+            'live_phone_hash' => hash('sha256', '02012345678'),
+            'customer_type_id' => $this->wholesale->id,
+            'status' => 1,
+        ]);
+
+        $order = DB::table('orders')->insertGetId([
+            'customer_id' => $customer,
+            'source' => 0,
+            'status' => 0,
+            'customer_name_snapshot' => 'Historic Customer',
+            'customer_phone_snapshot' => '02012345678',
+            'customer_type_id_snapshot' => $this->wholesale->id,
+            'customer_type_name_snapshot' => $this->wholesale->name,
+            'total_amount' => '10.00',
+        ]);
+
+        DB::table('order_items')->insert([
+            'order_id' => $order,
+            'printing_service_id' => $service->id,
+            'service_name_snapshot' => $service->name,
+            'customer_type_id_snapshot' => $this->wholesale->id,
+            'customer_type_name_snapshot' => $this->wholesale->name,
+            'quantity' => 1,
+            'agreed_total' => '10.00',
+            'production_stage' => 0,
+            'deleted_at' => $softDeleted ? now() : null,
+        ]);
     }
 
     protected function login(User $user): void

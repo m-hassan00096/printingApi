@@ -184,21 +184,10 @@ class PrintingServicesCrudTest extends PrintingServiceTestCase
 
     public function test_soft_deleted_order_item_still_blocks_service_deletion(): void
     {
-        // Isolated contract fixture until the Orders module defines its schema.
         $service = $this->service();
-        Schema::create('order_items', function (Blueprint $table): void {
-            $table->id();
-            $table->foreignId('printing_service_id')->constrained('printing_services');
-            $table->softDeletes();
-        });
-        DB::table('order_items')->insert([
-            'printing_service_id' => $service->id,
-            'deleted_at' => now(),
-        ]);
+        $this->historicalOrderItem($service, true);
 
-        // Simulate Orders registering its own usage guard. The production
-        // PrintingServices module itself never reads the Orders table.
-        app(PrintingServiceUsageRegistry::class)->register(FakeOrderServiceUsageGuard::class);
+        // Production Orders usage guard is now installed by Orders provider.
 
         $this->deleteJson('/api/v1/printing-services/'.$service->id)->assertStatus(409);
 

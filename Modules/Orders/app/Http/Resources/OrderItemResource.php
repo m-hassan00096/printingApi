@@ -25,7 +25,7 @@ class OrderItemResource extends JsonResource
             'productionStage' => $this->production_stage->value,
             'designerId' => $this->designer_id,
             'printingLocationId' => $this->printing_location_id,
-            'files' => OrderItemFileResource::collection($this->whenLoaded('files'))->resolve($request),
+            'files' => $this->whenLoaded('files', fn (): array => OrderItemFileResource::collection($this->files)->resolve($request)),
         ];
     }
 }

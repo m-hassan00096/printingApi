@@ -36,7 +36,7 @@ class OrderResource extends JsonResource
             'confirmedAt' => $this->confirmed_at?->toIso8601String(),
             'deliveredAt' => $this->delivered_at?->toIso8601String(),
             'cancelledAt' => $this->cancelled_at?->toIso8601String(),
-            'items' => OrderItemResource::collection($this->whenLoaded('items'))->resolve($request),
+            'items' => $this->whenLoaded('items', fn (): array => OrderItemResource::collection($this->items)->resolve($request)),
         ];
     }
 }
