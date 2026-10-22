@@ -34,13 +34,16 @@ class PrintingServicesTranslationsTest extends PrintingServiceTestCase
                 'يجب أن يكون السعر الأساسي صفرًا أو أكبر، وبحد أقصى منزلتين عشريتين، وبالجنيه المصري.',
             );
 
-        $this->postJson('/api/v1/printing-services', $this->payload([
+        $response = $this->postJson('/api/v1/printing-services', $this->payload([
             'priceTiers' => [['price' => '0.00']],
         ]))->assertUnprocessable()
-            ->assertJsonPath(
-                'errors.priceTiers.0.price.0',
-                'يجب أن يكون سعر الشريحة أكبر من صفر، وبحد أقصى منزلتين عشريتين، وبالجنيه المصري.',
-            );
+            ->assertJsonValidationErrors('priceTiers.0.price');
+
+        // Laravel's validation errors use flat keys containing dots, not nested JSON objects.
+        $this->assertSame(
+            'يجب أن يكون سعر الشريحة أكبر من صفر، وبحد أقصى منزلتين عشريتين، وبالجنيه المصري.',
+            $response->json('errors')['priceTiers.0.price'][0],
+        );
     }
 
     public function test_english_validation_uses_english_catalog(): void
@@ -55,13 +58,15 @@ class PrintingServicesTranslationsTest extends PrintingServiceTestCase
                 'The base price must be zero or greater, in EGP, with at most two decimal places.',
             );
 
-        $this->postJson('/api/v1/printing-services', $this->payload([
+        $response = $this->postJson('/api/v1/printing-services', $this->payload([
             'priceTiers' => [['price' => '0.00']],
         ]))->assertUnprocessable()
-            ->assertJsonPath(
-                'errors.priceTiers.0.price.0',
-                'The tier price must be greater than zero, in EGP, with at most two decimal places.',
-            );
+            ->assertJsonValidationErrors('priceTiers.0.price');
+
+        $this->assertSame(
+            'The tier price must be greater than zero, in EGP, with at most two decimal places.',
+            $response->json('errors')['priceTiers.0.price'][0],
+        );
     }
 
     public function test_arabic_nested_tier_customer_type_message_uses_row_path(): void
@@ -70,7 +75,7 @@ class PrintingServicesTranslationsTest extends PrintingServiceTestCase
         $service = $this->service();
         $tierId = $this->tier($service);
 
-        $this->patchJson('/api/v1/printing-services/'.$service->id, [
+        $response = $this->patchJson('/api/v1/printing-services/'.$service->id, [
             'priceTiers' => [[
                 'actionStatus' => 2,
                 'priceTierId' => $tierId,
@@ -80,10 +85,12 @@ class PrintingServicesTranslationsTest extends PrintingServiceTestCase
                 'price' => '5.00',
             ]],
         ])->assertUnprocessable()
-            ->assertJsonPath(
-                'errors.priceTiers.0.customerTypeId.0',
-                'نوع العميل غير موجود أو غير نشط ضمن أنواع العملاء في الإعدادات.',
-            );
+            ->assertJsonValidationErrors('priceTiers.0.customerTypeId');
+
+        $this->assertSame(
+            'نوع العميل غير موجود أو غير نشط ضمن أنواع العملاء في الإعدادات.',
+            $response->json('errors')['priceTiers.0.customerTypeId'][0],
+        );
     }
 
     public function test_arabic_quantity_overlap_uses_translated_business_message(): void
