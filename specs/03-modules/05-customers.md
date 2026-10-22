@@ -13,8 +13,8 @@ Customers owns the **registered customer profile**, current Settings customer-ty
 
 - **Settings** owns the `customer_types` lookup group in `parameters` / `parameter_values`; Customers only stores a foreign key to `parameter_values.id` and enforces membership, ACTIVE status, and non-deletion at assignment time.
 - **PrintingServices** owns tiers and proposed pricing; Customers does **not** store a price list, tier or historical order price.
-- **Orders** must link each order to a **registered** customer and derive customer type from trusted Customers data. Orders snapshots the customer type's name and agreed item prices when its commercial snapshot is committed. Editing a customer profile or type never retroactively changes saved order prices.
-- **Finance** alone owns customer account entries, balance, opening debt/credit and money posting. The customer profile does **not** store a writable running balance or opening_balance column. Customers can later expose a read-only statement/summary backed by a Finance-owned contract, without writing accounting transactions itself.
+- **Orders** must link each new order to a **registered ACTIVE** customer (reject INACTIVE/Soft Deleted); it derives customer type from trusted Customers data. Orders snapshots customer/type display names and agreed item prices at the agreed commercial freeze point. Editing name, phone or type does not retroactively rewrite saved historical data. Existing orders remain accessible if a customer later becomes INACTIVE.
+- **Finance** alone owns customer account entries, balance, opening debt/credit and money posting. The customer profile does **not** store a writable running balance or opening_balance column. Finance must permit authorized collection of existing debt for INACTIVE customers. Customers can later expose a read-only statement/summary backed by a Finance-owned contract, without writing accounting transactions itself.
 - **Core modules are permanent** by the owner's architecture decision; there is no runtime module enable/disable workflow.
 
 ## 2. Grounded business decisions
@@ -38,6 +38,9 @@ Customers owns the **registered customer profile**, current Settings customer-ty
 | CUS-015 | Customer phone **format is unrestricted** in v1: treat it as trimmed text with a reasonable storage length, without Egypt-only mobile, international-dialing or landline regex. Phone uniqueness remains enforced. |
 | CUS-016 | A Soft Deleted customer **releases its phone** for reuse by another live customer; live rows with the same trimmed phone remain prohibited via DB uniqueness and validation. |
 | CUS-017 | Customer listing has one **name-or-phone** search, plus separate customer-type and status filters. Customer-type name is *not* part of free-text search. |
+| CUS-018 | An **INACTIVE** customer cannot be selected for or assigned to **new Orders**, but existing receipts/debt collection remain allowed by Finance. Existing order/financial history remains readable. |
+| CUS-019 | Customer profile fields (including name, phone and customer type) **remain editable when the customer is INACTIVE**; valid type assignment and phone uniqueness checks still apply. |
+| CUS-020 | Staff may edit customer **name and phone even after prior Orders or financial movements**. Historical Orders must retain appropriate order-time display snapshots, and financial records must preserve their posted transaction facts; editing a current customer profile never silently changes saved transaction data. |
 
 ## 3. Proposed minimal Customers v1 data model
 
@@ -50,7 +53,7 @@ Customers owns the **registered customer profile**, current Settings customer-ty
 | `phone` | **Required and unique among non-Soft Deleted customers**, trimmed text with no country-specific regex; reuse after Soft Delete allowed. Enforce live-only uniqueness in MySQL, not validation alone. Avoid telephone-to-integer casting or stripping leading zero / `+`. |
 | `address` | **Optional/nullable** customer address; one address field in v1. |
 | `customer_type_id` | Required foreign key to `parameter_values.id`, checked against active `customer_types` |
-| `status` | Required integer-backed ACTIVE/INACTIVE enum (`1`/`0`) supplied by the frontend in create requests, not automatically defaulted. Status effects on new orders remain an explicit pending decision. |
+| `status` | Required integer-backed ACTIVE/INACTIVE enum (`1`/`0`) supplied by the frontend at creation. INACTIVE disallows new Orders but **does not** block profile edits or Finance collections of existing dues. |
 | `created_by` / `updated_by` | Nullable audit actor FKs using existing shared trait |
 | `created_at` / `updated_at` / `deleted_at` | Standard timestamps and **Soft Delete**. Deletion is permitted **only when no Orders and no posted financial movements have ever referenced this customer**. Those modules own the reference guards when built. |
 
@@ -61,16 +64,16 @@ No extra personal fields, company/tax entities, contact persons, multiple addres
 - **CUS-OPEN-01 — Resolved:** phone is unique among live customers, accepts unrestricted text format (trim input; no Egyptian/international regex) and can be reused after Soft Delete. Persist as string; never cast to numeric. Database constraint must enforce live-only uniqueness even on MySQL.
 - **CUS-OPEN-02:** **Optional single address approved.** A single required phone is approved for v1; no multiple contact fields are requested.
 - **CUS-OPEN-03 — Resolved:** customer is Soft Deleted **only if never linked to Orders or financial movements**; its phone becomes available after Soft Delete. Real Orders/Finance usage guards are deferred to those modules, and must be implemented before those modules persist references.
-- **CUS-OPEN-04 — Partially resolved:** status is explicitly submitted by frontend on create and is stored as an integer enum; do not assume backend default ACTIVE. Still confirm what INACTIVE does to new Orders and historical Finance collections, as well as whether inactive customers remain editable/viewable.
+- **CUS-OPEN-04 — Resolved:** frontend supplies explicit customer status on creation (no silent backend default). INACTIVE blocks creation of new Orders but permits profile updates, historical viewing and Finance collection of existing dues. Type changes are allowed even while INACTIVE if the target customer type is eligible.
 - **CUS-OPEN-05 — Resolved:** `filter[search]` matches customer name OR phone only. `filter[customerTypeId]` and `filter[status]` are separate filters; do not search customer-type name via text. QueryBuilder must allowlist only supported filters.
-- **CUS-OPEN-06:** Does opening account debt/credit get entered during registration or as a separate authorized Finance action? In either case it must become a **Finance ledger movement**, not a mutable Customer column.
+- **CUS-OPEN-06:** Does opening account debt/credit get entered during registration or as a separate authorized Finance action? Current customer create/edit screenshots have no debt field. In either workflow, the eventual transaction must be a **Finance ledger movement**, not a mutable Customer column. No initial-balance posting will be implemented as part of Customers CRUD without an approved separate Finance contract.
 
 ## 3.1 UI reference — owner's six screenshots, 2026-10-22
 
 The screenshots are requirements references, not evidence that dependent Orders/Finance APIs currently exist:
 
 - **Customers listing (now):** name, phone, optional address, customer type, active/inactive status, view/edit actions, new customer modal, name-or-phone search, customer-type filter and status filter. The displayed **order count** and **account balance** are **later integrations**, not columns managed by Customers.
-- **Customer create/edit modals (now):** required name/phone and current customer type, optional address, and required explicit frontend `status` (ACTIVE/INACTIVE); the checkbox supplies the value, while the rule for inactive customers and new orders is still pending.
+- **Customer create/edit modals (now):** required name/phone and current customer type, optional address, and explicit frontend `status` (ACTIVE/INACTIVE). Inactive customers remain editable, including type/name/phone; Orders must reject them for new orders.
 - **Customer details profile tab (now):** read-only profile plus edit modal; tabs for orders and account statement may be represented in the frontend later but must not trigger placeholder backend implementations.
 - **Customer orders tab (later Orders):** order numbers, dates, item counts, totals and production/delivery status are read from Orders-owned data.
 - **Finance cards and statement tab (later Finance):** total liabilities, collections/settlements, current debt, credit, chronological debit/credit movements and running balance are Finance-owned calculated/posted values, **not writable fields on customers**. The new-collection button is Finance functionality.
