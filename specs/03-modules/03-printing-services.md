@@ -90,6 +90,10 @@ The following are decisions made in the Printing Services discussion; they must 
 | PS-030 | All service prices and amounts are denominated in **Egyptian pounds (EGP)** only; no per-service currency choice or currency-conversion logic in v1. |
 | PS-031 | The business does **not impose arbitrary maximum quantity, unit-price or line-total limits**; staff may enter values up to the actual validated numeric/storage limits. All quantities remain positive integers, prices remain two-decimal money amounts, and arithmetic/storage overflow must be rejected explicitly. |
 | PS-032 | Normalize service names on create and update: trim outer whitespace and **collapse runs of two or more whitespace characters between words to a single ordinary space**; preserve letter case. The normalized name is stored and used for case-sensitive live uniqueness checks. |
+| PS-033 | Service status is an integer-backed enum: `PrintingServiceStatus` with `INACTIVE=0` and `ACTIVE=1`. API requests and resources use numeric 0/1 (like Settings). |
+| PS-034 | Service data and price-tier mutations are saved via **one service update API** and one atomic transaction; do not provide separate tier CRUD endpoints. |
+| PS-035 | For tier entries submitted in the service update, an integer-backed `PriceTierActionStatus` enum distinguishes `UNCHANGED=0`, `CREATE=1`, `UPDATE=2`, `DELETE=3`; `priceTierId` is **required for UPDATE and DELETE** and prohibited on CREATE. |
+| PS-036 | The service management list supports **only name search and service status filtering** (besides pagination and standard sorting). |
 
 ### Clarifications from these decisions
 
@@ -106,7 +110,7 @@ The following are decisions made in the Printing Services discussion; they must 
 |---|---|---|---|
 | name | Display name for the service | Yes | Required, trim outer whitespace and collapse repeated internal whitespace to one space; case-sensitive unique among live services. |
 | basePrice | Optional base **unit** price | No | Null or nonnegative decimal EGP amount with max two fractional digits; no arbitrary business ceiling, but subject to safe DB decimal capacity. |
-| status | Service availability | Yes, proposed consistent with Settings | Integer-backed active (1) or inactive (0). |
+| status | Service availability | Yes | Integer-backed `PrintingServiceStatus` enum: `INACTIVE=0`, `ACTIVE=1`, numeric values in API and enum cast on model. |
 | priceTiers | Child tier definitions | No | Zero or more entries; validated per §5 and §6. |
 
 - A service may exist without any tiers.
@@ -128,6 +132,8 @@ The following are decisions made in the Printing Services discussion; they must 
 | price | Unit price to apply when this tier wins | Yes | Positive EGP decimal **> 0**, max two decimal places; no artificial business maximum, with storage-overflow checks. |
 
 These tiers belong to a service; they are not standalone products and do not have a separate pricing-mode selector. There is **no per-tier active/inactive switch** in the approved input; Soft Delete removes a tier from future matches.
+
+The update-only `actionStatus` field is a **command enum**, never a persisted tier status. `priceTierId` identifies the existing tier by its real database `id` when a command updates or deletes it. Creating a service may include initial tier definitions without update commands.
 
 ### Settings integration contract
 
@@ -249,31 +255,63 @@ If the basePrice is zero and there is no matching tier, proposed total is precis
 
 ## 9. Create/update/delete lifecycle
 
-### 9.1 Service create and update
+### 9.1 Create service and initial tiers
 
-- Staff can create a service with only name, active/inactive state, and an omitted/null basePrice; tiers are optional.
-- Staff can edit name, basePrice and status; tier operations may be offered alongside the edit UI.
-- The backend must validate a complete proposed set of tier changes transactionally when bulk editing; partial saves are unacceptable if one tier is invalid.
-- Inactive services remain in authorized management; historical order items referencing them remain intact.
+- \`POST /api/v1/printing-services\` creates a service with optional \`priceTiers\` in **one transaction**.
+- On **create**, every tier is a new tier definition. No \`actionStatus\` or \`priceTierId\` is required.
+- All new tiers must pass customer-type checks, positive-price validation, range validity, the one-catch-all rule and nonoverlap checks.
+- \`status\` uses the integer-backed \`PrintingServiceStatus\` enum; the API accepts numeric 0/1.
+- Base price and initial tiers are optional; if any tier fails validation, the full service creation fails.
 
-### 9.2 Service Soft Delete
+### 9.2 One atomic update for service data and tier operations
+
+**\`PUT/PATCH /api/v1/printing-services/{service}\`** updates both service metadata and submitted \`priceTiers\` action commands. No standalone tier update/create/delete route is exposed.
+
+Proposed PHP enum definitions (to be created in \`Modules\PrintingServices\Enums\` at implementation time, **not already implemented**):
+
+~~~php
+enum PrintingServiceStatus: int
+{
+    case INACTIVE = 0;
+    case ACTIVE = 1;
+}
+
+enum PriceTierActionStatus: int
+{
+    case UNCHANGED = 0;
+    case CREATE = 1;
+    case UPDATE = 2;
+    case DELETE = 3;
+}
+~~~
+
+The service status is persisted and cast to \`PrintingServiceStatus\`. Tier \`actionStatus\` is an **input-only enum** and must not be stored in the price-tier table.
+
+| actionStatus | Enum case | priceTierId | Tier fields | Effect |
+|---:|---|---|---|---|
+| 0 | UNCHANGED | Optional | No fields needed | No update/delete of this tier |
+| 1 | CREATE | **Forbidden** | \`price\` required > 0; type/bounds optional | Create new tier |
+| 2 | UPDATE | **Required** | Current tier's editable values, with \`price\` > 0 | Update this tier |
+| 3 | DELETE | **Required** | No other tier data needed | Soft-delete this tier |
+
+**Proposed field-level validation convention:** For an UPDATE action (=2), send \`customerTypeId\`, \`minQuantity\`, \`maxQuantity\` and \`price\` as the tier's complete edited state; the first three keys are nullable but explicitly present to allow clearing values. On CREATE action (=1), omitted type/bounds default to null and \`price\` is required. For UNCHANGED (=0), \`priceTierId\` may be sent to correlate the UI row but does not trigger a write. For DELETE (=3), only \`actionStatus\` and \`priceTierId\` are needed. This full-tier UPDATE field convention is a technical proposal for validation; the owner-approved part is the action-status enum, one API and mandatory priceTierId for actions 2/3.
+
+- \`actionStatus\` must be an integer 0/1/2/3 validated with \`Rule::enum(PriceTierActionStatus::class)\`. String enum names and unrecognized integers are rejected. \`status\` must be integer 0/1 via \`Rule::enum(PrintingServiceStatus::class)\`.
+- UPDATE and DELETE must reference an existing **non-deleted** tier belonging to the \`{service}\` in the URL. Reject unknown, soft-deleted or other-service IDs. CREATE must not send an ID.
+- Reject two actionable commands targeting the **same existing tier** in one request. An invalid command fails the whole request.
+- **Omitted existing tiers remain unchanged.** Missing \`priceTiers\` and \`priceTiers: []\` mean no tier changes, **not** delete-all. A tier is deleted **only** with \`actionStatus=3\`. \`actionStatus=0\` means no change even if other tier fields are supplied.
+- The service metadata update may happen together with the commands, or alone; fields omitted from metadata remain unchanged.
+- Start a transaction and lock the **parent service row** (plus related records as needed), then load current tiers, interpret the full batch, validate the **final** post-command active tier set, and persist all changes atomically. This permits legitimate range swaps without validating inconsistent intermediate ranges.
+- Any error in any command or service field **rolls back all service and tier changes**. Historical Orders prices never change.
+
+### 9.3 Service Soft Delete
 
 - A service **never referenced by any persisted order item** may be soft-deleted.
-- **Any persisted order item reference** prevents deleting a service, even where the order is draft, cancelled, completed, or the order/item is soft-deleted. An unsaved frontend draft does not qualify as a persisted reference. Deactivation is allowed.
-- Check reference existence in the owning Orders module at integration time; a missing Orders table today is not evidence the delete rule has been implemented.
-- Do not cascade hard-delete order items, history, or tier-price snapshots.
-- Names from soft-deleted services can be used again by a new active service; soft-deleted services are hidden from ordinary management lists and selects.
-- Soft-deleting an eligible never-used service must soft-delete **its live child tiers in the same transaction**. No physical deletion of tiers or historical records.
-- No restore API in v1.
-
-### 9.3 Tier Soft Delete and editing
-
-- Staff can add, edit, or soft-delete a tier whether or not the parent service has already been used.
-- Historical orders must never be repriced by these operations.
-- The deleted tier ceases to match all **future** calculations.
-- Edited ranges/prices are checked against the remaining non-deleted tiers of the same bucket.
-- A deleted catch-all no longer occupies the catch-all slot; a new catch-all may be created.
-- No tier restore API in v1.
+- Any persisted order item reference blocks deletion, including draft/cancelled/completed or soft-deleted order histories. Deactivation is allowed. An unsaved frontend form is not a persisted order item.
+- Orders must implement the historic-use check at integration time; a missing Orders table today does not mean the protection has been implemented.
+- An eligible never-used service and **all its live child tiers** are soft-deleted in the same transaction.
+- Soft-deleted service names become reusable; deleted services/tiers are not selectable for new orders.
+- No hard-deletion of order items, tier snapshots or service rows; no restore endpoint in v1.
 
 ## 10. Historical Orders contract (future integration)
 
@@ -350,65 +388,113 @@ Customer-type ownership is in Settings/Customers; order item ownership and snaps
 
 ## 12. Proposed API contract (not yet implemented)
 
-Follow the existing project conventions: camelCase public fields, unified ApiResponse envelope, explicit FormRequest validation, mutation Actions, QueryBuilder allowlisted filters and standard pagination. The exact final route naming is proposed here for review.
+Use the application's current conventions: camelCase input, unified \`ApiResponse\`, FormRequests, explicit mutation Actions, QueryBuilder allowlisted filters and standard pagination. The following routes are **proposed**, not currently implemented.
 
 | Method | Proposed route | Behavior |
 |---|---|---|
-| GET | /api/v1/printing-services | Paginated authorized management list |
-| GET | /api/v1/printing-services/{service} | Service detail with applicable non-deleted tier definitions |
-| POST | /api/v1/printing-services | Create service (optionally with tiers) |
-| PUT/PATCH | /api/v1/printing-services/{service} | Update service metadata; tier modifications remain explicit |
-| DELETE | /api/v1/printing-services/{service} | Soft-delete a never-used service; conflict otherwise |
-| POST | /api/v1/printing-services/{service}/price-tiers | Add tier |
-| PUT/PATCH | /api/v1/printing-services/{service}/price-tiers/{tier} | Update a tier belonging to that service |
-| DELETE | /api/v1/printing-services/{service}/price-tiers/{tier} | Soft-delete tier |
-| POST | /api/v1/printing-services/price-preview | Calculate proposed unit price/total for a service, customer type and quantity |
+| GET | /api/v1/printing-services | Paginated list with **name-only search and status** filters |
+| GET | /api/v1/printing-services/{service} | Service detail and its active/non-deleted tiers |
+| POST | /api/v1/printing-services | Create service with optional initial tiers |
+| PUT/PATCH | /api/v1/printing-services/{service} | **Single atomic update** of service data + \`priceTiers[].actionStatus\` commands |
+| DELETE | /api/v1/printing-services/{service} | Soft-delete never-used service and all its tiers |
+| POST | /api/v1/printing-services/price-preview | Calculate proposed unit/total price for \`serviceId\`, \`customerTypeId\`, \`quantity\` |
 
-The owner approved **customerTypeId** as the pricing-preview input (not customerId). Validate that the ID belongs to active, non-deleted Settings customer_types before calculating a preview. The proposed endpoint placement/authorization remains subject to technical review. **Orders must resolve the actual customer's current customerTypeId server-side** when creating or updating an order; an untrusted preview input must not allow a mismatched customer classification on saved orders.
+**Do not expose individual tier POST/PUT/PATCH/DELETE endpoints.** Create/update/delete tier actions within an existing service are authorized by \`printing_services.update\`; initial tiers in service creation use \`printing_services.create\`.
 
-Proposed management list: filter[search], filter[status], sort, page, perPage. DefaultSort(-id), pagination metadata and allowed sorting should match the actual Settings implementation. Tier list ordering should be deterministic. Prevent nested tier routes from modifying a tier owned by another service.
+### Management list filtering
+
+Only these **two** business filters:
+
+| Parameter | Validation | Scope |
+|---|---|---|
+| \`filter[search]\` | Optional search text | Search **printing_services.name only**, not price tiers, type names, IDs, amounts or other fields |
+| \`filter[status]\` | Optional \`PrintingServiceStatus\` enum 0/1 | Active/inactive services |
+
+Pagination (\`page\`, \`perPage\`) and permitted sort fields (default \`-id\`, following current project conventions) remain available and are **not** other business filters. Reject unsupported filters. Soft-deleted services are excluded from the management list.
+
+### Price preview
+
+The preview input uses **customerTypeId**, not customerId. Validate membership in Settings' customer_types group and eligibility. At actual order save time, Orders must derive the real customer's type from trusted customer data, not trust an arbitrary frontend preview type.
 
 ## 13. Request/response examples (illustrative only)
 
-### 13.1 Create a service with no base price
+### 13.1 Create a service with initial tiers
 
 ~~~json
 {
   "name": "Business Cards",
-  "basePrice": null,
-  "status": 1
+  "basePrice": "10.00",
+  "status": 1,
+  "priceTiers": [
+    {
+      "customerTypeId": null,
+      "minQuantity": 100,
+      "maxQuantity": 500,
+      "price": "7.50"
+    },
+    {
+      "customerTypeId": 7,
+      "minQuantity": null,
+      "maxQuantity": null,
+      "price": "6.00"
+    }
+  ]
 }
 ~~~
 
-This service can be sold with manually entered order-line total unless configured tiers supply a suggestion.
+On create, \`status: 1\` is the numeric API value of \`PrintingServiceStatus::ACTIVE\`. All tier entries are new; no \`actionStatus\` or \`priceTierId\` field is needed. Customer-type ID 7 is illustrative; a real active Settings value must be supplied.
 
-### 13.2 Add a Wholesale quantity tier
+### 13.2 Single atomic service update with all four tier action statuses
+
+**PUT /api/v1/printing-services/12**
 
 ~~~json
 {
-  "customerTypeId": 7,
-  "minQuantity": 100,
-  "maxQuantity": 500,
-  "price": "5.75"
+  "name": "Business Cards",
+  "basePrice": "12.00",
+  "status": 1,
+  "priceTiers": [
+    {
+      "actionStatus": 0,
+      "priceTierId": 20
+    },
+    {
+      "actionStatus": 1,
+      "customerTypeId": 7,
+      "minQuantity": 501,
+      "maxQuantity": null,
+      "price": "5.75"
+    },
+    {
+      "actionStatus": 2,
+      "priceTierId": 21,
+      "customerTypeId": null,
+      "minQuantity": 100,
+      "maxQuantity": 500,
+      "price": "7.00"
+    },
+    {
+      "actionStatus": 3,
+      "priceTierId": 22
+    }
+  ]
 }
 ~~~
 
-ID 7 is only an **illustrative** customer-type ID: the backend must validate that the real ID belongs to the Settings customer_types group and is active. Unit price 5.75 for 200 pieces yields proposed total 1,150.00.
+Interpret this as: tier 20 **unchanged**, create a new tier, update tier 21, and **soft-delete** tier 22. All listed existing tier IDs must belong to service 12. Other stored tiers **not mentioned** are retained. Validate the completed pricing-tier state and commit/rollback **as a single transaction**.
 
-### 13.3 Add a generic catch-all tier
+### 13.3 Update only the service's metadata
 
 ~~~json
 {
-  "customerTypeId": null,
-  "minQuantity": null,
-  "maxQuantity": null,
-  "price": "9.00"
+  "name": "Premium Business Cards",
+  "status": 0
 }
 ~~~
 
-The catch-all tier can coexist with a generic constrained 100–500 tier; the constrained tier wins within that range.
+\`status: 0\` is \`PrintingServiceStatus::INACTIVE\`. The omitted \`basePrice\` and omitted \`priceTiers\` stay unchanged. \`priceTiers: []\` also means no tier mutations.
 
-### 13.4 Pricing preview — successful
+### 13.4 Price preview — successful
 
 ~~~json
 {
@@ -418,7 +504,7 @@ The catch-all tier can coexist with a generic constrained 100–500 tier; the co
 }
 ~~~
 
-Illustrative data payload **inside** the standard ApiResponse wrapper:
+Illustrative response payload **inside** the application's standard ApiResponse wrapper:
 
 ~~~json
 {
@@ -431,7 +517,7 @@ Illustrative data payload **inside** the standard ApiResponse wrapper:
 }
 ~~~
 
-### 13.5 Pricing preview — no configured price
+### 13.5 Price preview — no configured price
 
 ~~~json
 {
@@ -444,7 +530,7 @@ Illustrative data payload **inside** the standard ApiResponse wrapper:
 }
 ~~~
 
-In contrast, a legitimate free base-price result has source=basePrice, suggestedUnitPrice="0.00", suggestedTotal="0.00" and requiresManualTotal=false. The examples are **not** an assertion that these endpoints or payloads already exist.
+In contrast, a genuinely free base price returns source=basePrice, suggestedUnitPrice="0.00", suggestedTotal="0.00", requiresManualTotal=false. Examples are proposals, not statements that routes or code have been implemented.
 
 ## 14. Shared Selects integration
 
@@ -458,7 +544,7 @@ Whether an order-entry-specific select should include service base price or curr
 
 ## 15. Validation, errors and authorization semantics
 
-- Normalize service names by trimming outer whitespace and collapsing internal consecutive whitespace into one space on both create/update; reject names blank after normalization or duplicating an existing **case-sensitive normalized** live name. Reject invalid status, invalid basePrice and unsupported pricing-mode/package fields.
+- Normalize service names by trimming outer whitespace and collapsing internal consecutive whitespace into one space on both create/update; reject names blank after normalization or duplicating an existing **case-sensitive normalized** live name. Reject service status values outside the 0/1 `PrintingServiceStatus` enum, invalid basePrice and unsupported pricing-mode/package fields.
 - Reject price tier price null, 0, negative, non-numeric values or more than two decimal places. All money amounts are EGP; do not add a currency selector. Validate database representability and safe multiplication rather than inventing a business maximum.
 - Reject negative, fractional and zero quantities/bounds; reject minQuantity > maxQuantity. Do not impose an arbitrary maximum quantity; reject values exceeding the chosen integer representation.
 - Reject overlapping constrained ranges **within the same service and customer-type bucket**.
@@ -473,10 +559,15 @@ Whether an order-entry-specific select should include service base price or curr
 - Return 422 for ordinary validation errors and a consistent business conflict (project error contract, likely 409) for overlapping concurrent pricing-state conflicts or prohibited deletion, as decided in implementation.
 - Surface errors on public camelCase fields, not internal DB column names; do not expose SQL or internal rules.
 - Invalid client-provided customerTypeId must not be used to bypass current customer's pricing classification during order creation.
+- For each supplied update tier, validate numeric `actionStatus` against `PriceTierActionStatus` (0/1/2/3), require `priceTierId` for 2/3, prohibit it for 1, and allow it optionally for 0.
+- Reject wrong-service, nonexistent or soft-deleted `priceTierId` and duplicate actionable IDs in one batch. Never create a new tier through an UPDATE operation.
+- Interpret omitted tiers as unchanged and `actionStatus=0` as a no-op, with **only** `actionStatus=3` causing tier soft deletion.
+- Validate the proposed complete final tier set to catch overlaps/catch-all conflicts, and roll back **service metadata and all tier changes** on any error.
+- Management filter allowlist: `filter[search]` searches the **name only**; `filter[status]` validates the service enum; reject any additional business filters.
 
 ## 16. Proposed permissions
 
-The owner approved using service/product management permissions for all price-tier operations. **Do not introduce separate tier create/update/delete permissions.**
+The owner approved using service/product management permissions for all price-tier operations. **Do not introduce separate tier create/update/delete permissions or tier CRUD routes**; `printing_services.update` governs the single atomic tier-action batch.
 
 | Permission | Purpose |
 |---|---|
@@ -491,8 +582,8 @@ The management permissions above reflect the agreed boundaries. Selector and pre
 
 ## 17. Transactions, consistency and database safety
 
-1. Use transactions for service creation with initial tiers and for atomic multi-tier updates.
-2. Tier add/update must lock an appropriate stable pricing scope, reread the currently live tiers and validate **after** acquiring the lock; otherwise parallel requests can produce overlapping ranges.
+1. Use transactions for service creation with initial tiers and **all service update requests containing tier action commands**, rolling back the whole service metadata and tier update on any error.
+2. In the service update transaction lock the stable **parent printing service row** with `lockForUpdate()`, reread live tiers, apply the full submitted command set logically, and validate the **final active tier set** after acquiring the lock. This serializes concurrent edits for the same service and prevents stale overlap checks; verify on real MySQL.
 3. Price preview must ignore soft-deleted services/tiers and treat active/inactive correctly. Do not rely on cached frontend rules for authoritative saved orders.
 4. A service delete and concurrent order-item creation must be synchronized by the appropriate Orders/Services integration contract, preventing a never-used check from racing a new order link.
 5. **Case-sensitive** uniqueness of live service names requires an actual MySQL-safe constraint, not just app-level validation. Test same-case concurrent creation and coexistence of case-different names.
@@ -534,7 +625,7 @@ The owner closed **PS-OPEN-01/04/05/09** via PS-025–PS-028 and **PS-OPEN-06/10
 6. Deactivate a used service; existing saved orders still display original name/price.
 7. Prevent inactive or soft-deleted service from new-order selects.
 8. Validate required status and reject unsupported pricing-mode/package data.
-9. Paginated management list supports search/status and excludes soft-deleted rows.
+9. Paginated management list supports only `filter[search]` on **name** and `filter[status]` via enum; unsupported business filters fail, and soft-deleted rows are excluded.
 
 ### Tier definitions
 
@@ -548,7 +639,7 @@ The owner closed **PS-OPEN-01/04/05/09** via PS-025–PS-028 and **PS-OPEN-06/10
 17. Accept adjacent nonoverlapping ranges (1–200 with 201–500).
 18. Accept overlap for **different** customer-type buckets.
 19. Accept one catch-all alongside constrained ranges in the same bucket.
-20. Updating tier bounds revalidates overlap without self-conflict.
+20. Updating tier bounds via one service update command revalidates the final tier set without self-conflict or temporary intermediate-range conflicts.
 21. Soft-delete tier and verify it disappears from future pricing matches; historical order snapshots remain unchanged.
 22. Two simultaneous tier creates/updates cannot commit overlapping constrained ranges in one bucket on MySQL.
 
@@ -570,13 +661,23 @@ The owner closed **PS-OPEN-01/04/05/09** via PS-025–PS-028 and **PS-OPEN-06/10
 
 34. Unauthenticated management/select requests are rejected.
 35. Authorized view/select access does not automatically grant write permissions.
-36. Service create permission covers initial tiers; service update permission covers tier add/update/soft-delete; service delete covers eligible service-plus-tier soft deletion. No separate tier permissions.
+36. Service create permission covers initial tiers; service update permission covers all `actionStatus` commands through the **same service-update API**; service delete covers eligible service-plus-tier soft deletion. No separate tier CRUD permissions/routes.
 37. Shared select registry includes only active/nondeleted printing services and the existing customerTypes selector remains the source for tier type choices.
 38. Existing Identity and Settings tests remain green; new changes do not mutate Settings customer types or customer data.
 39. Settings customer-type Soft Delete is blocked where necessary by future integration references; the price-preview validates customerTypeId against the actual customer_types group.
 40. A service-delete race with new order creation does not leave an order referencing a deleted service, including persisted draft orders.
 41. Idempotent permission seeds do not fabricate pricing records.
 42. New migrations work on the target MySQL version, including live-name uniqueness and tier concurrency invariants.
+43. Service status is stored as `PrintingServiceStatus` and APIs return numeric enum values 0/1; invalid values are rejected.
+44. Update tier commands reject unrecognized `actionStatus` numbers, enum-name strings and missing actionStatus.
+45. UPDATE (2) and DELETE (3) without `priceTierId` fail validation; CREATE (1) with a `priceTierId` fails validation.
+46. UPDATE (2) and DELETE (3) with IDs from a different service or soft-deleted tiers fail; no partial changes.
+47. UNCHANGED (0) produces **no tier mutation**; omitted stored tiers also remain unchanged.
+48. Both a missing `priceTiers` field and an empty array result in **no tier deletion**.
+49. Mixed 0/1/2/3 commands update service and tiers atomically, including final-state-valid range swaps.
+50. Any tier command validation failure rolls back service metadata and all tier mutations.
+51. No independent tier POST/PATCH/PUT/DELETE endpoints are registered.
+52. Searching with `filter[search]` targets **only service name**, never customer-type names or tier prices; `filter[status]` is the only other business filter.
 
 ## 21. Related documentation and implementation boundaries
 
@@ -587,6 +688,6 @@ The owner closed **PS-OPEN-01/04/05/09** via PS-025–PS-028 and **PS-OPEN-06/10
 - Existing application response conventions, audit-column traits, Sanctum, Spatie permissions and QueryBuilder must be inspected in the implementation branch before finalizing API classes.
 - The Settings document mentions project-wide standards under specs/00-project, specs/01-architecture and specs/02-standards; these referenced documents were not present in this branch at the time this reference was drafted. Verify them when available rather than claiming they were read.
 
-**Non-negotiable boundaries:** one printing business; one application and database; **EGP only**; no arbitrary business upper cap but rigorous storage/overflow validation; names trimmed/collapsed internally and case-sensitive; no new customer-type table; no selectable price-mode field; positive tier prices; nullable or free base price; no same-bucket constrained overlap; one catch-all fallback per bucket; explicit precedence; historic order price snapshots; no service deletion once used; no changes to customer or order records within the Printing Services module.
+**Non-negotiable boundaries:** numeric enum-backed service status (0/1), one atomic service update with `PriceTierActionStatus` tier commands (0/1/2/3), tier ID required for updates/deletes, name-only/status management filters; one printing business; one application and database; **EGP only**; no arbitrary business upper cap but rigorous storage/overflow validation; names trimmed/collapsed internally and case-sensitive; no new customer-type table; no selectable price-mode field; positive tier prices; nullable or free base price; no same-bucket constrained overlap; one catch-all fallback per bucket; explicit precedence; historic order price snapshots; no service deletion once used; no changes to customer or order records within the Printing Services module.
 
 **Next phase:** Confirm outstanding §19 decisions at the relevant module boundary, approve schema/API proposals, then create separate implementation plan, tasks and tests. This reference file alone is not the implementation.
