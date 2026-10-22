@@ -3,13 +3,13 @@
 > **Document type:** Module Reference — functional requirements and proposed technical contracts only  
 > **Location:** specs/03-modules/03-printing-services.md  
 > **Branch:** feature/printing-services  
-> **Status:** Requirements draft — owner-confirmed rules recorded; remaining decisions explicitly isolated in §19 (five latest owner answers incorporated)  
+> **Status:** Owner-approved requirements; initial implementation exists on the feature branch, **pending PHPUnit and MySQL verification**. Remaining cross-module decisions are isolated in §19.  
 > **Scope:** Internal printing-service catalog, customer-type/quantity pricing, and pricing contracts for future order items  
 > **Stack:** Laravel 13 · React SPA · Sanctum stateful authentication · Spatie Laravel Permission · MySQL · nwidart/laravel-modules  
 > **Language:** Arabic API locale currently; technical identifiers and API fields in English  
 > **Source of customer types:** Settings technical parameter group customer_types, through parameter_values
 
-This reference records the business rules agreed with the project owner, distinguishes technical proposals from approved behavior, and provides examples and acceptance tests. It is **not** a claim that Printing Services code, routes, or migrations already exist. Implementation plans and tasks are separate artifacts.
+This reference records the agreed business rules, API contract, examples and acceptance tests. Initial module code, routes and migrations now exist on the feature branch, but **their runtime behavior has not yet been verified by a local test execution**. Cross-module Orders integration remains future work. Implementation plans and tasks are separate artifacts.
 
 ## 1. Purpose and ownership
 
@@ -267,7 +267,7 @@ If the basePrice is zero and there is no matching tier, proposed total is precis
 
 **\`PUT/PATCH /api/v1/printing-services/{service}\`** updates both service metadata and submitted \`priceTiers\` action commands. No standalone tier update/create/delete route is exposed.
 
-Proposed PHP enum definitions (to be created in \`Modules\PrintingServices\Enums\` at implementation time, **not already implemented**):
+Integer-backed enums now added under \`Modules\PrintingServices\Enums\` on the feature branch:
 
 ~~~php
 enum PrintingServiceStatus: int
@@ -386,9 +386,9 @@ Orders order items (owned by Orders, NOT created here)
 
 Customer-type ownership is in Settings/Customers; order item ownership and snapshots are in Orders. Do not cascade-delete type records or order items through a service/tier relation.
 
-## 12. Proposed API contract (not yet implemented)
+## 12. API contract — initial implementation (verification pending)
 
-Use the application's current conventions: camelCase input, unified \`ApiResponse\`, FormRequests, explicit mutation Actions, QueryBuilder allowlisted filters and standard pagination. The following routes are **proposed**, not currently implemented.
+Use the application's current conventions: camelCase input, unified \`ApiResponse\`, FormRequests, explicit mutation Actions, QueryBuilder allowlisted filters and standard pagination. The following routes have been added on the feature branch but must still be checked with a Laravel route listing and the feature tests.
 
 | Method | Proposed route | Behavior |
 |---|---|---|
@@ -530,7 +530,7 @@ Illustrative response payload **inside** the application's standard ApiResponse 
 }
 ~~~
 
-In contrast, a genuinely free base price returns source=basePrice, suggestedUnitPrice="0.00", suggestedTotal="0.00", requiresManualTotal=false. Examples are proposals, not statements that routes or code have been implemented.
+In contrast, a genuinely free base price returns source=basePrice, suggestedUnitPrice="0.00", suggestedTotal="0.00", requiresManualTotal=false. Examples describe the documented contract and code now committed to the branch; they do not certify passing tests or production readiness.
 
 ## 14. Shared Selects integration
 
@@ -690,4 +690,4 @@ The owner closed **PS-OPEN-01/04/05/09** via PS-025–PS-028 and **PS-OPEN-06/10
 
 **Non-negotiable boundaries:** numeric enum-backed service status (0/1), one atomic service update with `PriceTierActionStatus` tier commands (0/1/2/3), tier ID required for updates/deletes, name-only/status management filters; one printing business; one application and database; **EGP only**; no arbitrary business upper cap but rigorous storage/overflow validation; names trimmed/collapsed internally and case-sensitive; no new customer-type table; no selectable price-mode field; positive tier prices; nullable or free base price; no same-bucket constrained overlap; one catch-all fallback per bucket; explicit precedence; historic order price snapshots; no service deletion once used; no changes to customer or order records within the Printing Services module.
 
-**Next phase:** Confirm outstanding §19 decisions at the relevant module boundary, approve schema/API proposals, then create separate implementation plan, tasks and tests. This reference file alone is not the implementation.
+**Next phase:** Verify the module with Laravel PHPUnit tests, route listing and MySQL migration/concurrency checks before PR review. Orders-specific contracts, such as historic usage protection, require an explicit follow-up integration when Orders exists. Documentation and code commits alone do not establish production readiness.
