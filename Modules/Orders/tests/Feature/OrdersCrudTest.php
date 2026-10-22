@@ -106,6 +106,28 @@ class OrdersCrudTest extends OrdersTestCase
         $this->assertSoftDeleted('order_items', ['id' => $firstId]);
     }
 
+    public function test_replacing_draft_item_service_keeps_historic_reference(): void
+    {
+        $order = $this->draft();
+        $oldItem = $order->items()->firstOrFail();
+        $serviceId = $this->service->id;
+
+        $result = $this->patchJson($this->path($order).'/items/'.$oldItem->id, [
+            'serviceId' => $this->secondService->id,
+        ])->assertOk()
+            ->assertJsonPath('data.items.0.serviceId', $this->secondService->id)
+            ->assertJsonPath('data.totalAmount', '350.00');
+
+        $newItemId = $result->json('data.items.0.id');
+        $this->assertNotSame($oldItem->id, $newItemId);
+        $this->assertSoftDeleted('order_items', ['id' => $oldItem->id]);
+        $this->assertDatabaseHas('order_items', [
+            'id' => $oldItem->id, 'printing_service_id' => $serviceId,
+        ]);
+
+        $this->deleteJson('/api/v1/printing-services/'.$serviceId)->assertStatus(409);
+    }
+
     public function test_rejects_bad_customer_service_date_and_noncanonical_money(): void
     {
         $this->postJson('/api/v1/orders', $this->data([
