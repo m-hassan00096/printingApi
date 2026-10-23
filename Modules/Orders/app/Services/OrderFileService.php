@@ -41,20 +41,20 @@ class OrderFileService
         }
 
         $disk = Storage::disk('local');
-        $path = null;
+        $directory = 'orders/'.$order->id.'/'.$item->id;
+        $path = $disk->putFileAs($directory, $upload, (string) Str::uuid().'.'.$extension);
 
+        if ($path === false) {
+            throw ValidationException::withMessages(['file' => __('orders.messages.file_unavailable')]);
+        }
+
+        // File I/O (up to 100 MiB) takes place before acquiring the order lock.
+        // If a concurrent edit/delete invalidates the item, remove the staged
+        // file; failed DB transaction retries cannot create duplicate files.
         try {
-            return DB::transaction(function () use ($order, $item, $upload, $disk, $extension, &$path): OrderItemFile {
+            return DB::transaction(function () use ($order, $item, $upload, $extension, $path): OrderItemFile {
                 $locked = $this->drafts->lockedDraft($order);
                 $item = $locked->items()->whereKey($item->id)->lockForUpdate()->firstOrFail();
-
-                $directory = 'orders/'.$locked->id.'/'.$item->id;
-                $filename = (string) Str::uuid().'.'.$extension;
-                $path = $disk->putFileAs($directory, $upload, $filename);
-
-                if ($path === false) {
-                    throw ValidationException::withMessages(['file' => __('orders.messages.file_unavailable')]);
-                }
 
                 $original = basename(str_replace('\\', '/', $upload->getClientOriginalName()));
                 $original = mb_substr(str_replace(["\r", "\n"], '', $original), 0, 255);
@@ -76,9 +76,7 @@ class OrderFileService
                 return $record;
             }, 3);
         } catch (\Throwable $exception) {
-            if (is_string($path)) {
-                $disk->delete($path);
-            }
+            $disk->delete($path);
             throw $exception;
         }
     }

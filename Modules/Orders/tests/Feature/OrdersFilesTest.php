@@ -81,6 +81,22 @@ class OrdersFilesTest extends OrdersTestCase
             ->assertJsonMissingPath('data.path');
     }
 
+    public function test_failed_upload_to_confirmed_order_removes_staged_file(): void
+    {
+        Storage::fake('local');
+        $order = $this->draft();
+        $order->status = \Modules\Orders\Enums\OrderStatus::CONFIRMED;
+        $order->save();
+        $item = $order->items()->firstOrFail();
+
+        $this->post($this->path($order).'/items/'.$item->id.'/files', [
+            'file' => UploadedFile::fake()->createWithContent('design.pdf', '%PDF-1.7 Content'),
+        ], ['Accept' => 'application/json'])->assertStatus(409);
+
+        $this->assertDatabaseCount('order_item_files', 0);
+        $this->assertSame([], Storage::disk('local')->allFiles('orders'));
+    }
+
     public function test_nested_order_item_file_access_is_scoped(): void
     {
         Storage::fake('local');
