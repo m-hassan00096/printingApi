@@ -20,7 +20,6 @@ class OrderItemFileResource extends JsonResource
             'url' => $this->disk === 'public'
                 ? Storage::disk('public')->url($this->path)
                 : null,
-            'uploadedBy' => $this->uploaded_by,
             'createdAt' => $this->created_at?->toIso8601String(),
         ];
     }

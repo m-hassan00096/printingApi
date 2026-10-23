@@ -22,6 +22,7 @@ class OrderFileService
     public function __construct(
         private readonly DraftOrderService $drafts,
         private readonly OrderActivityWriter $activities,
+        private readonly OrderFileArchiveService $fileArchives,
     ) {}
 
     public function upload(Order $order, OrderItem $item, UploadedFile $upload): OrderItemFile
@@ -99,15 +100,19 @@ class OrderFileService
     {
         $this->assertFileBelongs($order, $item, $file);
 
-        DB::transaction(function () use ($order, $item, $file): void {
+        $this->fileArchives->transaction(function (array &$moves) use ($order, $item, $file): void {
             $locked = $this->drafts->lockedDraft($order);
             $lockedItem = $locked->items()->whereKey($item->id)->lockForUpdate()->firstOrFail();
             $record = $lockedItem->files()->whereKey($file->id)->lockForUpdate()->firstOrFail();
+
+            // Preserve bytes under the same relative path on the private disk.
+            $this->fileArchives->archive($record, $moves);
             $record->delete();
+
             $this->activities->record($locked, 'file_removed', [
                 'itemId' => $item->id, 'fileId' => $file->id,
             ]);
-        }, 3);
+        });
     }
 
     /**

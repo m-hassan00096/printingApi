@@ -15,6 +15,7 @@ class DraftOrderService
     public function __construct(
         private readonly OrderPricingService $pricing,
         private readonly OrderActivityWriter $activities,
+        private readonly OrderFileArchiveService $fileArchives,
     ) {}
 
     public function create(array $data): Order
@@ -160,33 +161,47 @@ class DraftOrderService
 
     public function removeItem(Order $order, int $itemId): Order
     {
-        return DB::transaction(function () use ($order, $itemId): Order {
+        return $this->fileArchives->transaction(function (array &$moves) use ($order, $itemId): Order {
             $locked = $this->lockedDraft($order);
             if ($locked->items()->count() <= 1) {
                 throw new OrdersBusinessException('last_item_required');
             }
 
             $item = $locked->items()->whereKey($itemId)->lockForUpdate()->firstOrFail();
+
+            // Archive public uploads before hiding their parent item.
+            foreach ($item->files()->lockForUpdate()->get() as $file) {
+                $this->fileArchives->archive($file, $moves);
+            }
+
             $item->delete();
             $this->pricing->recomputeTotal($locked);
             $this->activities->record($locked, 'item_removed', ['itemId' => $itemId]);
 
             return $this->refresh($locked);
-        }, 3);
+        });
     }
 
     public function delete(Order $order): void
     {
-        DB::transaction(function () use ($order): void {
+        $this->fileArchives->transaction(function (array &$moves) use ($order): void {
             $locked = Order::query()->whereKey($order->getKey())->lockForUpdate()->firstOrFail();
 
             if ($locked->status !== OrderStatus::DRAFT) {
                 throw new OrdersBusinessException('only_drafts_deletable');
             }
 
+            // Move all public assets to private storage, including assets of
+            // items already soft-deleted in a previously saved draft.
+            foreach ($locked->items()->withTrashed()->orderBy('id')->get() as $item) {
+                foreach ($item->files()->withTrashed()->lockForUpdate()->get() as $file) {
+                    $this->fileArchives->archive($file, $moves);
+                }
+            }
+
             $this->activities->record($locked, 'draft_deleted');
             $locked->delete();
-        }, 3);
+        });
     }
 
     public function lockedDraft(Order $order): Order
