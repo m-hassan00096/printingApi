@@ -5,15 +5,16 @@ use App\Enums\HttpStatusCode;
 use App\Helpers\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
-use Illuminate\Validation\ValidationException;
 use Modules\Orders\Http\Requests\IndexOrdersRequest;
 use Modules\Orders\Http\Requests\StoreOrderRequest;
 use Modules\Orders\Http\Requests\UpdateOrderRequest;
 use Modules\Orders\Http\Resources\OrderCollection;
 use Modules\Orders\Http\Resources\OrderResource;
+use Modules\Orders\Enums\OrderStatus;
 use Modules\Orders\Models\Order;
 use Modules\Orders\Services\DraftOrderService;
-use Modules\Orders\Services\OrderDraftIdempotencyService;
+use Modules\Orders\Services\OrderIdempotencyKey;
+use Modules\Orders\Services\OrderLifecycleService;
 use Modules\Orders\Services\OrderQueryService;
 
 class OrderController extends Controller
@@ -32,32 +33,44 @@ class OrderController extends Controller
         );
     }
 
-    public function store(StoreOrderRequest $request, OrderDraftIdempotencyService $drafts): JsonResponse
+    public function store(StoreOrderRequest $request, OrderLifecycleService $orders): JsonResponse
     {
-        $key = trim((string) $request->header('Idempotency-Key', ''));
-        if ($key === '' || strlen($key) > 128) {
-            throw ValidationException::withMessages([
-                'Idempotency-Key' => __('orders.messages.idempotency_required'),
-            ]);
-        }
-
-        $order = $drafts->create($request->validated(), $key);
+        $data = $request->validated();
+        $this->authorizeConfirmationWhenRequested($request, $data);
+        $key = OrderIdempotencyKey::required($request);
+        $order = $orders->create($data, $key);
 
         return ApiResponse::success(
             data: (new OrderResource($order))->resolve($request),
-            message: __('orders.messages.draft_created'),
+            message: $order->status === OrderStatus::CONFIRMED
+                ? __('orders.messages.confirmed')
+                : __('orders.messages.draft_created'),
             status: HttpStatusCode::CREATED,
         );
     }
 
-    public function update(UpdateOrderRequest $request, Order $order, DraftOrderService $drafts): JsonResponse
+    public function update(UpdateOrderRequest $request, Order $order, OrderLifecycleService $orders): JsonResponse
     {
-        $updated = $drafts->update($order, $request->validated());
+        $data = $request->validated();
+        $this->authorizeConfirmationWhenRequested($request, $data);
+        $key = (int) ($data['status'] ?? OrderStatus::DRAFT->value) === OrderStatus::CONFIRMED->value
+            ? OrderIdempotencyKey::required($request)
+            : null;
+        $updated = $orders->update($order, $data, $key);
 
         return ApiResponse::success(
             data: (new OrderResource($updated))->resolve($request),
-            message: __('orders.messages.draft_updated'),
+            message: $updated->status === OrderStatus::CONFIRMED
+                ? __('orders.messages.confirmed')
+                : __('orders.messages.draft_updated'),
         );
+    }
+
+    private function authorizeConfirmationWhenRequested(\Illuminate\Http\Request $request, array $data): void
+    {
+        if ((int) ($data['status'] ?? OrderStatus::DRAFT->value) === OrderStatus::CONFIRMED->value) {
+            abort_unless($request->user()?->can('orders.confirm'), 403);
+        }
     }
 
     public function destroy(Order $order, DraftOrderService $drafts): JsonResponse

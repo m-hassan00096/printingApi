@@ -20,6 +20,7 @@ return [
         'finance_unavailable' => 'Order confirmation and cancellation require a working Finance integration.',
         'admin_only_delete' => 'Only the system administrator may delete drafts.',
         'file_unavailable' => 'The requested file is not available.',
+        'file_content_invalid' => 'File contents do not match the supplied file type.',
         'file_extension' => 'This file format is not supported.',
         'file_too_large' => 'The maximum upload size is 100 MiB.',
         'idempotency_required' => 'The idempotency key is required.',

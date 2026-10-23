@@ -5,6 +5,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Modules\Orders\Enums\OrderSource;
+use Modules\Orders\Enums\OrderStatus;
 use Modules\Orders\Http\Requests\Concerns\RejectsUnknownFields;
 
 class StoreOrderRequest extends FormRequest
@@ -18,7 +19,7 @@ class StoreOrderRequest extends FormRequest
 
     protected function allowedPayloadFields(): array
     {
-        return ['customerId', 'source', 'dueDate', 'notes', 'items'];
+        return ['customerId', 'source', 'dueDate', 'notes', 'items', 'status', 'depositAmount'];
     }
 
     public function rules(): array
@@ -29,6 +30,15 @@ class StoreOrderRequest extends FormRequest
                 Rule::exists('customers', 'id')->whereNull('deleted_at')->where('status', 1),
             ],
             'source' => ['required', 'integer', Rule::enum(OrderSource::class)],
+            // Optional for existing clients; omitted status means DRAFT.
+            'status' => ['sometimes', 'required', 'integer', Rule::in([
+                OrderStatus::DRAFT->value, OrderStatus::CONFIRMED->value,
+            ])],
+            'depositAmount' => [
+                'sometimes', 'nullable', 'string',
+                'prohibited_unless:status,1',
+                'regex:/\A(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,2})?\z/D',
+            ],
             'dueDate' => [
                 'sometimes', 'nullable', 'date_format:Y-m-d',
                 'after_or_equal:'.CarbonImmutable::now('Africa/Cairo')->toDateString(),
