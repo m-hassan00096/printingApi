@@ -51,7 +51,7 @@
 - Frontend displays suggested pricing separately; **user-input agreedTotal is the authoritative agreed price**. Input DECIMAL(12,2), >=0 on Draft; no discount field and no arbitrary frontend source.
 - Preserve `agreed_total`, suggested_total, source and service/name/type snapshots from the moment of the saved draft revision. Catalog price changes do not automatically change saved Draft or Confirmed items; user must explicitly edit/refresh. When Draft customer changes, new suggested prices come from the new customer's type but edited agreed totals remain as entered; the UI may prompt the user to adopt new suggestions.
 - A confirmed order's snapshots are frozen. Confirm without a proper Finance record remains blocked until gateway installation.
-- Money math on totals uses integer cents / string decimal, never floating-point. Enforce total_amount <= 9,999,999,999.99.
+- Money math on totals uses integer cents / string decimal, never floating-point. Enforce total_amount <= 9,999,999,999.99. If the PrintingServices suggested total exceeds Orders' DECIMAL(12,2) range, reject with localized 422 and roll back the Draft; never allow an internal DB overflow/500.
 
 ## 5. Draft CRUD API contracts (v1)
 

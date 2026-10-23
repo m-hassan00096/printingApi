@@ -57,6 +57,13 @@ class OrderPricingService
         $agreedTotal = OrderMoney::format(OrderMoney::cents((string) $data['agreedTotal']));
         $preview = $this->resolver->resolve($service, (int) $order->customer_type_id_snapshot, $quantity);
         $suggested = $preview['suggestedTotal'];
+        if ($suggested !== null && ! OrderMoney::valid($suggested)) {
+            // PrintingServices permits wider prices (DECIMAL 30,2), but Orders
+            // stores DECIMAL(12,2); fail with 422 rather than a database error.
+            throw ValidationException::withMessages([
+                'items' => __('orders.messages.total_overflow'),
+            ]);
+        }
 
         $item->printing_service_id = $service->id;
         $item->service_name_snapshot = $service->name;
@@ -80,6 +87,11 @@ class OrderPricingService
             $preview = $this->resolver->resolve(
                 $service, (int) $order->customer_type_id_snapshot, (int) $item->quantity,
             );
+            if ($preview['suggestedTotal'] !== null && ! OrderMoney::valid($preview['suggestedTotal'])) {
+                throw ValidationException::withMessages([
+                    'items' => __('orders.messages.total_overflow'),
+                ]);
+            }
             $item->customer_type_id_snapshot = $order->customer_type_id_snapshot;
             $item->customer_type_name_snapshot = $order->customer_type_name_snapshot;
             $item->suggested_total = $preview['suggestedTotal'];

@@ -144,6 +144,25 @@ class OrdersCrudTest extends OrdersTestCase
         $this->deleteJson('/api/v1/printing-services/'.$serviceId)->assertStatus(409);
     }
 
+    public function test_service_catalog_price_wider_than_order_decimal_returns_validation_error(): void
+    {
+        // PrintingServices supports DECIMAL(30,2), Orders stores DECIMAL(12,2).
+        $this->service->base_price = '10000000000.00';
+        $this->service->save();
+
+        $this->postJson('/api/v1/orders', $this->data([
+            'items' => [[
+                'serviceId' => $this->service->id,
+                'quantity' => 100,
+                'agreedTotal' => '350.00',
+            ]],
+        ]))->assertUnprocessable()->assertJsonValidationErrors('items');
+
+        $this->assertDatabaseCount('orders', 0);
+        $this->assertDatabaseCount('order_items', 0);
+        $this->assertDatabaseCount('order_idempotency_keys', 0);
+    }
+
     public function test_rejects_bad_customer_service_date_and_noncanonical_money(): void
     {
         $this->postJson('/api/v1/orders', $this->data([
