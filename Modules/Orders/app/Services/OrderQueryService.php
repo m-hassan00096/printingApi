@@ -37,8 +37,15 @@ class OrderQueryService
                     }
                     $today = CarbonImmutable::now('Africa/Cairo')->toDateString();
                     $query->where('status', OrderStatus::CONFIRMED->value)
-                        ->whereNull('delivered_at')
-                        ->whereDate('due_date', '<', $today);
+                        ->whereNotNull('due_date')
+                        ->where(function (Builder $query) use ($today): void {
+                            $query->where(function (Builder $pending) use ($today): void {
+                                $pending->whereNull('delivered_at')->whereDate('due_date', '<', $today);
+                            })->orWhere(function (Builder $delivered): void {
+                                $delivered->whereNotNull('delivered_at')
+                                    ->whereColumn('delivered_local_date', '>', 'due_date');
+                            });
+                        });
                 }),
             )
             ->allowedSorts('id', 'created_at', 'due_date')

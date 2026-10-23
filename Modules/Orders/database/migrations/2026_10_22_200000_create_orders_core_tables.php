@@ -29,6 +29,8 @@ return new class extends Migration
             $table->foreignId('cancelled_by')->nullable()->constrained('users')->restrictOnDelete();
             $table->text('cancellation_reason')->nullable();
             $table->timestamp('delivered_at')->nullable();
+            // Cairo date frozen at actual delivery; avoids UTC-date ambiguity in late filters.
+            $table->date('delivered_local_date')->nullable();
             $this->addCreatedUpdatedByColumns($table);
             $table->timestamps();
             $table->softDeletes();

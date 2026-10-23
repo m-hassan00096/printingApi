@@ -185,6 +185,45 @@ class OrdersCrudTest extends OrdersTestCase
         $this->getJson('/api/v1/orders?filter[bad]=1')->assertUnprocessable();
     }
 
+    public function test_late_only_includes_late_deliveries_and_excludes_on_time_deliveries(): void
+    {
+        $today = \Carbon\CarbonImmutable::now('Africa/Cairo');
+
+        $pending = $this->draft();
+        $pending->status = OrderStatus::CONFIRMED;
+        $pending->due_date = $today->subDays(2)->format('Y-m-d');
+        $pending->production_status = \Modules\Orders\Enums\OrderProductionStatus::NOT_STARTED;
+        $pending->save();
+
+        // Cairo's delivered date is authoritative even when UTC calendar day differs.
+        $late = $this->draft(['customerId' => $this->secondCustomer->id]);
+        $late->status = OrderStatus::CONFIRMED;
+        $late->due_date = $today->subDays(4)->format('Y-m-d');
+        $late->delivered_at = $today->subDays(3)->setTime(0, 30)->utc();
+        $late->delivered_local_date = $today->subDays(3)->format('Y-m-d');
+        $late->production_status = \Modules\Orders\Enums\OrderProductionStatus::DELIVERED;
+        $late->save();
+
+        $onTime = $this->draft();
+        $onTime->status = OrderStatus::CONFIRMED;
+        $onTime->due_date = $today->subDays(1)->format('Y-m-d');
+        $onTime->delivered_at = $today->subDay()->setTime(10, 0)->utc();
+        $onTime->delivered_local_date = $today->subDay()->format('Y-m-d');
+        $onTime->production_status = \Modules\Orders\Enums\OrderProductionStatus::DELIVERED;
+        $onTime->save();
+
+        $response = $this->getJson('/api/v1/orders?filter[lateOnly]=1')->assertOk()
+            ->assertJsonPath('data.pagination.total', 2);
+
+        $ids = array_column($response->json('data.orders'), 'id');
+        $this->assertContains($pending->id, $ids);
+        $this->assertContains($late->id, $ids);
+        $this->assertNotContains($onTime->id, $ids);
+
+        $this->getJson($this->path($late))->assertOk()
+            ->assertJsonPath('data.delayStatus', 1);
+    }
+
     public function test_draft_deletion_is_soft_and_only_admin_can_delete(): void
     {
         $order = $this->draft();

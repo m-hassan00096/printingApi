@@ -29,9 +29,9 @@
 ### 2.3 OrderDelayStatus (integer, calculated, never stored)
 - NO_DUE_DATE=0, LATE=1, ON_TIME=2.
 - For Draft with no production schedule: expose null. For a confirmed order with no due date: NO_DUE_DATE.
-- If delivered, LATE when delivery local date > due date, otherwise ON_TIME **permanently**.
+- If delivered, LATE when delivery local date > due date, otherwise ON_TIME **permanently**. Store `delivered_local_date` (`Africa/Cairo`, set by Deliveries in the same transaction as `delivered_at`) so the listing filter matches the historic status even around UTC date boundaries.
 - If undelivered, LATE when today's date in Africa/Cairo > due date, otherwise ON_TIME, even if all items are READY; this measures actual delivery.
-- Cancellation freezes evaluation at cancellation date for historical audit; lateOnly is for relevant noncancelled confirmed orders.
+- Cancellation freezes evaluation at cancellation date for historical audit; `lateOnly=1` includes both overdue **undelivered** confirmed orders and **delivered-late** confirmed orders, excluding cancelled orders.
 
 ## 3. Order fields / normalization
 

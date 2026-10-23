@@ -19,10 +19,15 @@ class OrderDelayCalculator
         }
 
         $dueDay = $order->due_date->format('Y-m-d');
-        $reference = $order->delivered_at ?? $order->cancelled_at;
-        $day = $reference === null
-            ? CarbonImmutable::now('Africa/Cairo')->toDateString()
-            : CarbonImmutable::instance($reference)->timezone('Africa/Cairo')->toDateString();
+        if ($order->delivered_at !== null && $order->delivered_local_date !== null) {
+            // Delivery saves Cairo's local date on the same transaction as delivered_at.
+            $day = $order->delivered_local_date->format('Y-m-d');
+        } else {
+            $reference = $order->delivered_at ?? $order->cancelled_at;
+            $day = $reference === null
+                ? CarbonImmutable::now('Africa/Cairo')->toDateString()
+                : CarbonImmutable::instance($reference)->timezone('Africa/Cairo')->toDateString();
+        }
 
         return $day > $dueDay ? OrderDelayStatus::LATE : OrderDelayStatus::ON_TIME;
     }
