@@ -137,7 +137,10 @@ class OrdersCrudTest extends OrdersTestCase
 
         $this->patchJson($this->path($order).'/items/'.$firstId, [
             'agreedTotal' => '400.00',
-        ])->assertOk()->assertJsonPath('data.totalAmount', '400.00');
+        ])->assertOk()
+            ->assertJsonPath('message', __('orders.messages.item_updated'))
+            ->assertJsonPath('data', null);
+        $this->assertSame('400.00', (string) $order->fresh()->total_amount);
 
         $this->deleteJson($this->path($order).'/items/'.$firstId)
             ->assertStatus(409);
@@ -145,10 +148,16 @@ class OrdersCrudTest extends OrdersTestCase
             'serviceId' => $this->secondService->id,
             'quantity' => 12,
             'agreedTotal' => '240.00',
-        ])->assertOk()->assertJsonPath('data.totalAmount', '640.00');
+        ])->assertOk()
+            ->assertJsonPath('message', __('orders.messages.item_added'))
+            ->assertJsonPath('data', null);
+        $this->assertSame('640.00', (string) $order->fresh()->total_amount);
 
         $this->deleteJson($this->path($order).'/items/'.$firstId)
-            ->assertOk()->assertJsonPath('data.totalAmount', '240.00');
+            ->assertOk()
+            ->assertJsonPath('message', __('orders.messages.item_deleted'))
+            ->assertJsonPath('data', null);
+        $this->assertSame('240.00', (string) $order->fresh()->total_amount);
 
         $this->assertSoftDeleted('order_items', ['id' => $firstId]);
     }
@@ -159,13 +168,16 @@ class OrdersCrudTest extends OrdersTestCase
         $oldItem = $order->items()->firstOrFail();
         $serviceId = $this->service->id;
 
-        $result = $this->patchJson($this->path($order).'/items/'.$oldItem->id, [
+        $this->patchJson($this->path($order).'/items/'.$oldItem->id, [
             'serviceId' => $this->secondService->id,
         ])->assertOk()
+            ->assertJsonPath('message', __('orders.messages.item_updated'))
+            ->assertJsonPath('data', null);
+
+        $newItemId = $order->items()->firstOrFail()->id;
+        $this->getJson($this->path($order))->assertOk()
             ->assertJsonPath('data.items.0.serviceId', $this->secondService->id)
             ->assertJsonPath('data.totalAmount', '350.00');
-
-        $newItemId = $result->json('data.items.0.id');
         $this->assertNotSame($oldItem->id, $newItemId);
         $this->assertSoftDeleted('order_items', ['id' => $oldItem->id]);
         $this->assertDatabaseHas('order_items', [

@@ -9,9 +9,10 @@ use Modules\Orders\Tests\Feature\Support\OrdersTestCase;
 
 class OrdersFilesTest extends OrdersTestCase
 {
-    public function test_files_are_publicly_stored_downloadable_and_soft_deletable(): void
+    public function test_deleted_file_moves_from_public_to_private_without_losing_bytes(): void
     {
         Storage::fake('public');
+        Storage::fake('local');
         $order = $this->draft();
         $item = $order->items()->firstOrFail();
         $path = $this->path($order).'/items/'.$item->id.'/files';
@@ -23,13 +24,24 @@ class OrdersFilesTest extends OrdersTestCase
         $created->assertCreated()
             ->assertJsonPath('message', __('orders.messages.file_uploaded'))
             ->assertJsonPath('data.name', 'artwork.pdf')
-            ->assertJsonMissingPath('data.path');
+            ->assertJsonMissingPath('data.path')
+            ->assertJsonMissingPath('data.uploadedBy');
 
         $fileId = $created->json('data.id');
+        $record = \Modules\Orders\Models\OrderItemFile::findOrFail($fileId);
+        $storagePath = $record->path;
+        Storage::disk('public')->assertExists($storagePath);
 
         $this->get($path.'/'.$fileId)->assertOk();
-        $this->deleteJson($path.'/'.$fileId)->assertOk();
+        $this->deleteJson($path.'/'.$fileId)->assertOk()->assertJsonPath('data', null);
 
+        Storage::disk('public')->assertMissing($storagePath);
+        Storage::disk('local')->assertExists($storagePath);
+        $this->assertSame('%PDF-1.7 Test', Storage::disk('local')->get($storagePath));
+        $this->assertDatabaseHas('order_item_files', [
+            'id' => $fileId, 'disk' => 'local', 'path' => $storagePath,
+            'uploaded_by' => $this->admin->id,
+        ]);
         $this->assertSoftDeleted('order_item_files', ['id' => $fileId]);
         $this->get($path.'/'.$fileId)->assertNotFound();
     }

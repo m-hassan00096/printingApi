@@ -95,6 +95,7 @@ class OrdersGranularPermissionTest extends OrdersTestCase
     public function test_file_permissions_are_independent_for_upload_list_view_and_delete(): void
     {
         Storage::fake('public');
+        Storage::fake('local');
         $order = $this->draft();
         $item = $order->items()->firstOrFail();
         $base = $this->path($order).'/items/'.$item->id.'/files';

@@ -44,15 +44,18 @@ class OrderFilePublicUrlTest extends OrdersTestCase
         $this->assertStringNotContainsString('signature=', $file['url']);
         $this->assertStringNotContainsString('expires=', $file['url']);
         $this->assertArrayNotHasKey('expiresAt', $file);
+        $this->assertArrayNotHasKey('uploadedBy', $file);
         $this->assertArrayNotHasKey('path', $file);
         $this->assertArrayNotHasKey('disk', $file);
 
         $this->getJson($base)->assertOk()
             ->assertJsonPath('data.0.id', $file['id'])
-            ->assertJsonPath('data.0.url', $file['url']);
+            ->assertJsonPath('data.0.url', $file['url'])
+            ->assertJsonMissingPath('data.0.uploadedBy');
 
         $this->getJson($this->path($order))->assertOk()
-            ->assertJsonPath('data.items.0.files.0.url', $file['url']);
+            ->assertJsonPath('data.items.0.files.0.url', $file['url'])
+            ->assertJsonMissingPath('data.items.0.files.0.uploadedBy');
 
         // Actual HTTP serving of /storage is done by the webserver symlink
         // (php artisan storage:link), not by Laravel's API request pipeline.
