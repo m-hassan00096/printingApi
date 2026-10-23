@@ -15,6 +15,10 @@ class OrdersCrudTest extends OrdersTestCase
         $response->assertCreated()
             ->assertJsonPath('success', true)
             ->assertJsonPath('message', __('orders.messages.draft_created'))
+            ->assertJsonPath('data', null);
+
+        $order = Order::query()->latest('id')->firstOrFail();
+        $this->getJson($this->path($order))->assertOk()
             ->assertJsonPath('data.orderNumber', null)
             ->assertJsonPath('data.productionStatus', null)
             ->assertJsonPath('data.status', OrderStatus::DRAFT->value)
@@ -25,8 +29,6 @@ class OrdersCrudTest extends OrdersTestCase
             ->assertJsonMissingPath('data.items.0.wasManuallyPriced')
             ->assertJsonPath('data.items.0.agreedTotal', '350.00')
             ->assertJsonPath('data.items.0.unitPrice', '3.5000');
-
-        $order = Order::findOrFail($response->json('data.id'));
         $this->assertNull($order->confirmed_at);
         $this->assertDatabaseHas('order_activities', [
             'order_id' => $order->id, 'event_type' => 'draft_created',
@@ -36,10 +38,13 @@ class OrdersCrudTest extends OrdersTestCase
     public function test_repeated_idempotency_key_does_not_create_duplicate_drafts(): void
     {
         $this->withHeader('Idempotency-Key', 'draft-duplicate-case');
-        $first = $this->postJson('/api/v1/orders', $this->data())->assertCreated();
-        $second = $this->postJson('/api/v1/orders', $this->data())->assertCreated();
+        $this->postJson('/api/v1/orders', $this->data())
+            ->assertCreated()->assertJsonPath('data', null);
+        $firstId = Order::query()->max('id');
+        $this->postJson('/api/v1/orders', $this->data())
+            ->assertCreated()->assertJsonPath('data', null);
 
-        $this->assertSame($first->json('data.id'), $second->json('data.id'));
+        $this->assertSame($firstId, Order::query()->max('id'));
         $this->assertDatabaseCount('orders', 1);
         $this->assertDatabaseCount('order_activities', 1);
         $this->assertDatabaseCount('order_idempotency_keys', 1);
@@ -51,12 +56,15 @@ class OrdersCrudTest extends OrdersTestCase
 
     public function test_idempotency_keys_are_case_sensitive(): void
     {
-        $first = $this->withHeader('Idempotency-Key', 'Example-Key-A')
-            ->postJson('/api/v1/orders', $this->data())->assertCreated();
-        $second = $this->withHeader('Idempotency-Key', 'example-key-a')
-            ->postJson('/api/v1/orders', $this->data())->assertCreated();
+        $this->withHeader('Idempotency-Key', 'Example-Key-A')
+            ->postJson('/api/v1/orders', $this->data())
+            ->assertCreated()->assertJsonPath('data', null);
+        $firstId = Order::query()->max('id');
+        $this->withHeader('Idempotency-Key', 'example-key-a')
+            ->postJson('/api/v1/orders', $this->data())
+            ->assertCreated()->assertJsonPath('data', null);
 
-        $this->assertNotSame($first->json('data.id'), $second->json('data.id'));
+        $this->assertNotSame($firstId, Order::query()->max('id'));
         $this->assertDatabaseCount('orders', 2);
         $this->assertDatabaseCount('order_idempotency_keys', 2);
         $this->assertDatabaseMissing('order_idempotency_keys', [
@@ -92,6 +100,10 @@ class OrdersCrudTest extends OrdersTestCase
             'customerId' => $this->secondCustomer->id,
             'notes' => 'New customer',
         ])->assertOk()
+            ->assertJsonPath('message', __('orders.messages.draft_updated'))
+            ->assertJsonPath('data', null);
+
+        $this->getJson($this->path($order))->assertOk()
             ->assertJsonPath('data.customerId', $this->secondCustomer->id)
             ->assertJsonPath('data.items.0.customerTypeId', $this->retail->id)
             ->assertJsonPath('data.items.0.customerTypeName', 'Retail')
@@ -176,6 +188,10 @@ class OrdersCrudTest extends OrdersTestCase
                 'agreedTotal' => '350.00',
             ]],
         ]))->assertCreated()
+            ->assertJsonPath('data', null);
+
+        $order = Order::query()->latest('id')->firstOrFail();
+        $this->getJson($this->path($order))->assertOk()
             ->assertJsonPath('data.totalAmount', '350.00')
             ->assertJsonPath('data.items.0.agreedTotal', '350.00')
             ->assertJsonPath('data.items.0.unitPrice', '3.5000')
