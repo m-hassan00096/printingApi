@@ -20,7 +20,9 @@ class OrdersCrudTest extends OrdersTestCase
             ->assertJsonPath('data.status', OrderStatus::DRAFT->value)
             ->assertJsonPath('data.totalAmount', '350.00')
             ->assertJsonPath('data.items.0.serviceName', 'Business Cards')
-            ->assertJsonPath('data.items.0.suggestedTotal', '1000.00')
+            ->assertJsonMissingPath('data.items.0.suggestedTotal')
+            ->assertJsonMissingPath('data.items.0.priceSource')
+            ->assertJsonMissingPath('data.items.0.wasManuallyPriced')
             ->assertJsonPath('data.items.0.agreedTotal', '350.00')
             ->assertJsonPath('data.items.0.unitPrice', '3.5000');
 
@@ -91,7 +93,9 @@ class OrdersCrudTest extends OrdersTestCase
             'notes' => 'New customer',
         ])->assertOk()
             ->assertJsonPath('data.customerId', $this->secondCustomer->id)
-            ->assertJsonPath('data.items.0.suggestedTotal', '200.00')
+            ->assertJsonPath('data.items.0.customerTypeId', $this->retail->id)
+            ->assertJsonPath('data.items.0.customerTypeName', 'Retail')
+            ->assertJsonMissingPath('data.items.0.suggestedTotal')
             ->assertJsonPath('data.items.0.agreedTotal', '350.00');
 
         $this->assertSame($this->secondCustomer->id, $order->fresh()->customer_id);
@@ -110,7 +114,7 @@ class OrdersCrudTest extends OrdersTestCase
 
         $this->getJson($this->path($order))->assertOk()
             ->assertJsonPath('data.items.0.serviceName', 'Business Cards')
-            ->assertJsonPath('data.items.0.suggestedTotal', '1000.00')
+            ->assertJsonMissingPath('data.items.0.suggestedTotal')
             ->assertJsonPath('data.items.0.agreedTotal', '350.00');
     }
 
@@ -159,9 +163,9 @@ class OrdersCrudTest extends OrdersTestCase
         $this->deleteJson('/api/v1/printing-services/'.$serviceId)->assertStatus(409);
     }
 
-    public function test_service_catalog_price_wider_than_order_decimal_returns_validation_error(): void
+    public function test_orders_are_priced_only_from_agreed_total_not_catalog_preview(): void
     {
-        // PrintingServices supports DECIMAL(30,2), Orders stores DECIMAL(12,2).
+        // PrintingServices' suggestion must not control the actual order price.
         $this->service->base_price = '10000000000.00';
         $this->service->save();
 
@@ -171,11 +175,19 @@ class OrdersCrudTest extends OrdersTestCase
                 'quantity' => 100,
                 'agreedTotal' => '350.00',
             ]],
-        ]))->assertUnprocessable()->assertJsonValidationErrors('items');
+        ]))->assertCreated()
+            ->assertJsonPath('data.totalAmount', '350.00')
+            ->assertJsonPath('data.items.0.agreedTotal', '350.00')
+            ->assertJsonPath('data.items.0.unitPrice', '3.5000')
+            ->assertJsonMissingPath('data.items.0.suggestedTotal')
+            ->assertJsonMissingPath('data.items.0.priceSource')
+            ->assertJsonMissingPath('data.items.0.wasManuallyPriced');
 
-        $this->assertDatabaseCount('orders', 0);
-        $this->assertDatabaseCount('order_items', 0);
-        $this->assertDatabaseCount('order_idempotency_keys', 0);
+        $this->assertDatabaseCount('orders', 1);
+        $this->assertDatabaseCount('order_items', 1);
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('order_items', 'suggested_total'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('order_items', 'price_source'));
+        $this->assertFalse(\Illuminate\Support\Facades\Schema::hasColumn('order_items', 'was_manually_priced'));
     }
 
     public function test_rejects_bad_customer_service_date_and_noncanonical_money(): void
