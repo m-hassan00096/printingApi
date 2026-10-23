@@ -4,6 +4,7 @@ namespace Modules\Orders\Http\Controllers;
 use App\Enums\HttpStatusCode;
 use App\Helpers\ApiResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Modules\Orders\Http\Requests\UploadOrderFileRequest;
 use Modules\Orders\Http\Resources\OrderItemFileResource;
@@ -15,6 +16,17 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OrderFileController extends Controller
 {
+    public function index(Request $request, Order $order, OrderItem $item): JsonResponse
+    {
+        abort_unless($item->order_id === $order->id, 404);
+
+        return ApiResponse::success(
+            data: OrderItemFileResource::collection(
+                $item->files()->orderByDesc('id')->get(),
+            )->resolve($request),
+        );
+    }
+
     public function store(
         UploadOrderFileRequest $request,
         Order $order,

@@ -22,7 +22,12 @@ class OrderItemResource extends JsonResource
             'productionStage' => $this->production_stage->value,
             'designerId' => $this->designer_id,
             'printingLocationId' => $this->printing_location_id,
-            'files' => $this->whenLoaded('files', fn (): array => OrderItemFileResource::collection($this->files)->resolve($request)),
+            // A user permitted to view an order is not automatically allowed
+            // to enumerate that order's files.
+            'files' => $this->when(
+                $request->user()?->can('orders.files.list') === true && $this->relationLoaded('files'),
+                fn (): array => OrderItemFileResource::collection($this->files)->resolve($request),
+            ),
         ];
     }
 }

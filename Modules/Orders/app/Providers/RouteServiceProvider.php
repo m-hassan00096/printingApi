@@ -12,5 +12,9 @@ class RouteServiceProvider extends ServiceProvider
     {
         Route::middleware('api')->prefix('api')->name('api.')
             ->group(module_path($this->name, '/routes/api.php'));
+
+        // Browser-openable signed URLs: no session required to consume the
+        // 15-minute capability, but issuance requires orders.files.view.
+        Route::middleware('web')->group(module_path($this->name, '/routes/web.php'));
     }
 }

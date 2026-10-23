@@ -81,6 +81,45 @@ class OrderFileService
         }
     }
 
+    /**
+     * A short-lived signed URL can be opened directly by a browser without
+     * a session. Reject revoked files and soft-deleted parent records.
+     */
+    public function preview(OrderItemFile $file): StreamedResponse
+    {
+        $item = $file->item;
+        abort_unless($item !== null && $item->order !== null, 404);
+        abort_unless($file->disk === 'local', 404);
+
+        $disk = Storage::disk($file->disk);
+        abort_unless($disk->exists($file->path), 404);
+
+        $mimeTypes = [
+            'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png', 'gif' => 'image/gif',
+            'webp' => 'image/webp', 'bmp' => 'image/bmp',
+            'tif' => 'image/tiff', 'tiff' => 'image/tiff',
+            'pdf' => 'application/pdf',
+        ];
+
+        // Browser preview is safe only for known image/PDF extensions.
+        // Office/Adobe files are attachments, never rendered as HTML.
+        $type = $mimeTypes[strtolower($file->extension)] ?? 'application/octet-stream';
+        $inline = $type !== 'application/octet-stream';
+
+        return $disk->response(
+            $file->path,
+            $file->original_name,
+            [
+                'Content-Type' => $type,
+                'Cache-Control' => 'private, no-store',
+                'Referrer-Policy' => 'no-referrer',
+                'X-Content-Type-Options' => 'nosniff',
+            ],
+            $inline ? 'inline' : 'attachment',
+        );
+    }
+
     public function download(Order $order, OrderItem $item, OrderItemFile $file): StreamedResponse
     {
         $this->assertFileBelongs($order, $item, $file);
@@ -114,8 +153,9 @@ class OrderFileService
      * Extension alone is user-controlled. Validate a minimal file magic header,
      * including legacy OLE Office files and ZIP-based modern Office files.
      *
-     * This is file-type screening, not malware scanning; files remain private
-     * and are always delivered as attachments rather than executed or previewed.
+     * This is file-type screening, not malware scanning; files stay private.
+     * Only recognized images and PDFs may be rendered inline on signed routes;
+     * other formats are always downloaded as attachments.
      */
     private function matchesFileSignature(UploadedFile $upload, string $extension): bool
     {
