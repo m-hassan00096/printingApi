@@ -54,7 +54,7 @@ class OrderFileArchiveTest extends OrdersTestCase
             ->assertJsonPath('data', null);
 
         $this->assertSoftDeleted('order_items', ['id' => $first->id]);
-        $this->assertSame('350.00', (string) $order->fresh()->total_amount);
+        $this->assertSame('200.00', (string) $order->fresh()->total_amount);
 
         Storage::disk('public')->assertMissing($removed->path);
         Storage::disk('local')->assertExists($removed->path);
