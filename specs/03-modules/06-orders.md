@@ -1,4 +1,4 @@
-# Tabaa — Orders Core Specification (v1)
+# Tabaa — Orders Core Specification (v1.1)
 
 > **Implementation scope:** Orders Core on `feature/orders` only: persisted quotations (Draft), products, pricing snapshots, upload/download of order-item files, list/search/filter, activities, safe deletion, customer/service reference guards, and lifecycle/finance contracts. **NO actual Finance, Production, or Deliveries mutations in this module.** Confirm and Cancel may not post without a real Finance adapter. This specification records business decisions reviewed October 22, 2026.
 
@@ -53,7 +53,7 @@
 - A confirmed order's snapshots are frozen. Confirm without a proper Finance record remains blocked until gateway installation.
 - Money math on totals uses integer cents / string decimal, never floating-point. Enforce total_amount <= 9,999,999,999.99. If the PrintingServices suggested total exceeds Orders' DECIMAL(12,2) range, reject with localized 422 and roll back the Draft; never allow an internal DB overflow/500.
 
-## 5. Draft CRUD API contracts (v1)
+## 5. Orders Core CRUD API contracts (v1.1)
 
 All under `auth:sanctum` with Spatie permission. Standard `ApiResponse` success/message/data and 422 validation/409 business rules.
 
@@ -61,8 +61,8 @@ All under `auth:sanctum` with Spatie permission. Standard `ApiResponse` success/
 |---|---|---|
 | `GET /api/v1/orders` | `orders.view` | `data.orders` array + `data.pagination`; search by orderNumber/customer.name/customer.phone; exact `filter[status]`, `filter[productionStatus]`, `filter[lateOnly]=1`; sort id/created_at/due_date default `-id`; page/perPage max100. All includes Draft and Cancelled; Draft orderNumber = null. |
 | `GET /api/v1/orders/{order}` | `orders.view` | order Resource incl. items/files and relevant history; no historical Finance values until Finance exists |
-| `POST /api/v1/orders` | `orders.create` | Requires `Idempotency-Key` header; creates DRAFT with client, source, dueDate?, notes?, `items` min1; HTTP 201 localized message and complete order resource incl. ID. Replaying the same key and payload returns the existing Draft; changed payload or deleted Draft returns 409. No ORD number/ledger. |
-| `PUT/PATCH /api/v1/orders/{order}` | `orders.update` | Draft header only; optional customerId/source/dueDate/notes. Customer change only in Draft; snapshots and suggested prices for unchanged items refresh when customer changes while agreed totals persist. HTTP 200 localized message, order resource. |
+| `POST /api/v1/orders` | `orders.create` (plus `orders.confirm` when `status=1`) | Requires `Idempotency-Key` header. Accepts `status=0` Draft (default if omitted) or `status=1` Confirmed; accepts optional `depositAmount` **only** with `status=1`. Always creates products from `items` (min 1) and returns HTTP 201 plus full order resource. Direct confirmation is atomic: Finance ledger + generated ORD number + status; currently `status=1` returns 409 and rolls back **all** draft/idempotency/sequence writes until Finance is available. Replaying the same key + same payload returns existing order without posting again; changed payload returns 409. |
+| `PUT/PATCH /api/v1/orders/{order}` | `orders.update` (plus `orders.confirm` when `status=1`) | Draft header plus optional `status=0/1`, `depositAmount` only with `status=1`. Omitted status or 0 retains Draft. Status 1 triggers **Draft → Confirmed** in the same transaction as header updates and Finance; requires `Idempotency-Key` header. Any Finance failure returns 409 and **rolls back all edits**. Customer change allowed only while Draft; confirmed/cancelled orders cannot be edited/downgraded via this endpoint. HTTP 200 localized message and full order resource. |
 | `POST /api/v1/orders/{order}/items` | `orders.update` | Add item to Draft. |
 | `PUT/PATCH /api/v1/orders/{order}/items/{item}` | `orders.update` | Update Draft item serviceId/quantity/specifications/agreedTotal; recalculate suggested metadata and order total. |
 | `DELETE /api/v1/orders/{order}/items/{item}` | `orders.update` | Remove Draft item (Soft Delete); reject removing final item. Retain historic service references. |
@@ -79,6 +79,7 @@ Create shape (illustrative):
 {
   "customerId": 15,
   "source": 0,
+  "status": 0,
   "dueDate": "2026-10-25",
   "notes": "ملاحظة",
   "items": [
@@ -87,7 +88,7 @@ Create shape (illustrative):
 }
 ```
 
-Status, price source, customer type, total, production stage, delivery and timestamps are backend-owned; reject unknown input fields rather than silently persisting them.
+`status` is **client-selectable only as an explicit requested transition** (`0` Draft, `1` Confirmed) in create/update; `2` Cancelled is rejected with 422 and requires its own cancel action. Omitted `status` defaults to Draft on create, and keeps Draft on update. `depositAmount` is an optional decimal string only with `status=1` (and may be null); it is never an automatic credit deduction. The server owns the **persisted** status after enforcing permissions, Finance and transaction semantics. Price source, customer type, total, production stage, delivery and timestamps are always backend-owned; reject unknown input fields. Confirming through create/update additionally requires `orders.confirm` and a valid `Idempotency-Key`. The dedicated `/confirm` endpoint remains available.
 
 ## 6. Lifecycle integration and invariants
 
@@ -95,6 +96,7 @@ Status, price source, customer type, total, production stage, delivery and times
 - Lock PrintingService row for every item service reference, ensuring not deleted and active; register Orders PrintServiceUsageGuard **at the same time**.
 - Draft deletion preserves history; only Admin with `orders.delete` can do it. Soft Delete of an Order does not enable removal of referenced Customers/Services.
 - A confirmed/other non-Draft order is read-only via current Core CRUD; future Orders+Finance/Production features will introduce controlled modifications and logged reversal effects.
+- A single shared `OrderConfirmationService` performs DRAFT → CONFIRMED whether invoked from POST create, PATCH/PUT update, or the dedicated `/confirm` route. The Finance gateway must post the immutable ledger **before** generating the order number or committing; confirmation adds the `order_confirmed` activity event. Status 1 requested through POST/PATCH without available Finance returns HTTP 409 with **no partial Draft, header modification, number, idempotency row, or activity**. Creation and confirmation run inside one outer transaction.
 - Production/Deliveries later lock orders and items while changing stages/status, then recompute and persist production status. No client route may set production_status.
 - No fake finance or temporary ledger; default Finance gateway is unavailable (409) for Confirm/Cancel; do not claim success without journal posting.
 - Draft `Idempotency-Key` values are case-sensitive and stored only as SHA-256 digests to enforce exact uniqueness even with MySQL case-insensitive text collations.
@@ -103,7 +105,7 @@ Status, price source, customer type, total, production stage, delivery and times
 ## 7. Testing and permissions
 
 - Permissions: orders.view, orders.create, orders.update, orders.delete, orders.confirm, orders.cancel.
-- PHPUnit feature coverage: auth, permission isolation, safe draft create/update, customer reassignment & pricing snapshots, multiple same-service items, search/filter/pagination, immutable confirmed state, safe draft-only soft-delete, file authorization and size, guard behavior, failure of Confirm/Cancel without Finance, localization.
+- PHPUnit feature coverage: auth, permission isolation, safe draft create/update, customer reassignment & pricing snapshots, multiple same-service items, search/filter/pagination, immutable confirmed state, safe draft-only soft-delete, file authorization and size, guard behavior, failure of Confirm/Cancel without Finance, **status=0 and status=1 request contracts** (including atomic rollback and idempotency), localization.
 - MySQL CI: migration constraints, concurrency on customer and service locks, future daily sequence uniqueness under InnoDB. Never run destructive migrate:fresh tests against a non-CI database.
 - Use `lang/ar/orders.php` and `lang/en/orders.php` for every user-visible message. API fields camelCase. Do not return money as JSON floats.
 
