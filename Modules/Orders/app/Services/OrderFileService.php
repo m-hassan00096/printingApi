@@ -36,6 +36,10 @@ class OrderFileService
             throw ValidationException::withMessages(['file' => __('orders.messages.file_too_large')]);
         }
 
+        if (! $this->matchesFileSignature($upload, $extension)) {
+            throw ValidationException::withMessages(['file' => __('orders.messages.file_content_invalid')]);
+        }
+
         $disk = Storage::disk('local');
         $path = null;
 
@@ -106,6 +110,51 @@ class OrderFileService
                 'itemId' => $item->id, 'fileId' => $file->id,
             ]);
         }, 3);
+    }
+
+    /**
+     * Extension alone is user-controlled. Validate a minimal file magic header,
+     * including legacy OLE Office files and ZIP-based modern Office files.
+     *
+     * This is file-type screening, not malware scanning; files remain private
+     * and are always delivered as attachments rather than executed or previewed.
+     */
+    private function matchesFileSignature(UploadedFile $upload, string $extension): bool
+    {
+        $handle = fopen($upload->getRealPath(), 'rb');
+        if ($handle === false) {
+            return false;
+        }
+
+        try {
+            $header = fread($handle, 16);
+        } finally {
+            fclose($handle);
+        }
+
+        if (! is_string($header)) {
+            return false;
+        }
+
+        $starts = static fn (string $magic): bool => str_starts_with($header, $magic);
+        $pdf = $starts('%PDF-');
+        $zip = $starts("PK\x03\x04");
+        $ole = $starts("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1");
+
+        return match ($extension) {
+            'pdf' => $pdf,
+            'png' => $starts("\x89PNG\r\n\x1A\n"),
+            'jpg', 'jpeg' => $starts("\xFF\xD8\xFF"),
+            'gif' => $starts('GIF87a') || $starts('GIF89a'),
+            'webp' => $starts('RIFF') && substr($header, 8, 4) === 'WEBP',
+            'bmp' => $starts('BM'),
+            'tif', 'tiff' => $starts("II\x2A\x00") || $starts("MM\x00\x2A"),
+            'psd' => $starts('8BPS'),
+            'ai' => $pdf || $starts('%!PS'),
+            'doc', 'xls' => $ole,
+            'docx', 'xlsx' => $zip,
+            default => false,
+        };
     }
 
     private function assertItemBelongs(Order $order, OrderItem $item): void

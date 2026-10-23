@@ -46,6 +46,41 @@ class OrdersFilesTest extends OrdersTestCase
         ], ['Accept' => 'application/json'])->assertUnprocessable();
     }
 
+    public function test_rejects_executable_content_disguised_as_supported_file(): void
+    {
+        Storage::fake('local');
+        $order = $this->draft();
+        $item = $order->items()->firstOrFail();
+        $path = $this->path($order).'/items/'.$item->id.'/files';
+
+        foreach (['fake.pdf', 'fake.png', 'fake.psd', 'fake.docx'] as $name) {
+            $this->post($path, [
+                'file' => UploadedFile::fake()->createWithContent($name, '<?php echo "unsafe"; ?>'),
+            ], ['Accept' => 'application/json'])
+                ->assertUnprocessable()
+                ->assertJsonValidationErrors('file');
+        }
+
+        $this->assertDatabaseCount('order_item_files', 0);
+    }
+
+    public function test_valid_png_signature_is_accepted_without_exposing_internal_path(): void
+    {
+        Storage::fake('local');
+        $order = $this->draft();
+        $item = $order->items()->firstOrFail();
+        $path = $this->path($order).'/items/'.$item->id.'/files';
+
+        $this->post($path, [
+            'file' => UploadedFile::fake()->createWithContent(
+                'logo.png', "\x89PNG\r\n\x1A\n".str_repeat("\x00", 48),
+            ),
+        ], ['Accept' => 'application/json'])
+            ->assertCreated()
+            ->assertJsonPath('data.extension', 'png')
+            ->assertJsonMissingPath('data.path');
+    }
+
     public function test_nested_order_item_file_access_is_scoped(): void
     {
         Storage::fake('local');
