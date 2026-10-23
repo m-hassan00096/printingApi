@@ -1,4 +1,4 @@
-# Tabaa — Orders Core Specification (v1.4)
+# Tabaa — Orders Core Specification (v1.5)
 
 > **Implementation scope:** Orders Core on `feature/orders` only: persisted quotations (Draft), products, pricing snapshots, upload/download of order-item files, list/search/filter, activities, safe deletion, customer/service reference guards, and lifecycle/finance contracts. **NO actual Finance, Production, or Deliveries mutations in this module.** Confirm and Cancel may not post without a real Finance adapter. This specification records business decisions reviewed October 22, 2026.
 
@@ -40,10 +40,10 @@
 - `customer_name_snapshot`, `customer_phone_snapshot`, `customer_type_id_snapshot`, `customer_type_name_snapshot` copied from trusted customer and Settings type at draft save/reassignment; **immutable after Confirm**.
 - `total_amount` DECIMAL(12,2) sum of active item agreed totals; EGP only, string money. `created_by`, `updated_by`, `confirmed_at`, `delivered_at`, `cancelled_at`, `cancelled_by`, `cancellation_reason`, timestamps, Soft Deletes.
 - `order_items`: order_id, printing_service_id, service_name_snapshot, customer_type_id/name_snapshot, quantity unsigned positive integer, specifications nullable text, `agreed_total` DECIMAL(12,2), `production_stage` integer, designer_id nullable, printing_location_id nullable, created/updated by, timestamps and soft deletes.
-- Repeated service IDs among order items allowed. Changing an existing Draft item's **serviceId** creates a replacement item and Soft Deletes the old item, transferring its active file references, so historic service references and price snapshots are preserved; the returned replacement item has a new ID. Unit price displayed as **derived informational value** agreed_total / quantity (do not trust submitted unit price), total is authoritative.
-- `order_item_files`: files are stored on Laravel's `public` disk with UUID filenames. API resources return `Storage::disk('public')->url($file->path)`. Original metadata, extension, MIME, size and uploader are saved; uploaded types and the 100 MiB limit remain unchanged.
+- Repeated service IDs among order items allowed. Changing an existing Draft item's **serviceId** creates a replacement item and Soft Deletes the old item, transferring its active file references, so historic service references and price snapshots are preserved; the replacement item has a new internal ID. Unit price displayed as **derived informational value** agreed_total / quantity (do not trust submitted unit price), total is authoritative.
+- `order_item_files`: files are stored on Laravel's `public` disk with UUID filenames. API resources return `Storage::disk('public')->url($file->path)`. Original metadata, extension, MIME, size and uploader are saved; uploaded types and the 100 MiB limit remain unchanged. The database keeps `uploaded_by` for audit but API file responses omit `uploadedBy`.
 - `order_activities`: order_id, actor_id, event_type, structured metadata with relevant old/new values, immutable created_at. No every-keypress audit.
-- New files are public and viewable directly through `/storage/...` after `php artisan storage:link`; public URLs do not expire. Files on the old `local` disk need a separate migration and return `url: null` meanwhile.
+- New, active files are public and viewable through `/storage/...` after `php artisan storage:link`. File, item and Draft-order deletions relocate their still-public attachments to private `local` storage, preserving each file's exact relative path and bytes. Stored file disk becomes `local`. Previously private files retain `url: null`.
 
 ## 4. Pricing and snapshots
 
@@ -63,16 +63,16 @@ API routes use Sanctum and granular permissions; the file URLs are ordinary publ
 | `GET /api/v1/orders/{order}` | `orders.view` | order Resource incl. items/files and relevant history; no historical Finance values until Finance exists |
 | `POST /api/v1/orders` | `orders.create` (plus `orders.confirm` when `status=1`) | Requires `Idempotency-Key` header. Accepts `status=0` Draft (default if omitted) or `status=1` Confirmed; accepts optional `depositAmount` **only** with `status=1`. Always creates products from `items` (min 1) and returns HTTP 201 with localized `message` and `data: null`. Direct confirmation is atomic: Finance ledger + generated ORD number + status; currently `status=1` returns 409 and rolls back **all** draft/idempotency/sequence writes until Finance is available. Replaying the same key + same payload returns existing order without posting again; changed payload returns 409. |
 | `PUT/PATCH /api/v1/orders/{order}` | `orders.update` (plus `orders.confirm` when `status=1`) | Draft header plus optional `status=0/1`, `depositAmount` only with `status=1`. Omitted status or 0 retains Draft. Status 1 triggers **Draft → Confirmed** in the same transaction as header updates and Finance; requires `Idempotency-Key` header. Any Finance failure returns 409 and **rolls back all edits**. Customer change allowed only while Draft; confirmed/cancelled orders cannot be edited/downgraded via this endpoint. HTTP 200 localized message and `data: null`. |
-| `POST /api/v1/orders/{order}/items` | `orders.items.create` | Add item to Draft. |
-| `PUT/PATCH /api/v1/orders/{order}/items/{item}` | `orders.items.update` | Update Draft item serviceId/quantity/specifications/agreedTotal; recompute order total from agreed prices. |
-| `DELETE /api/v1/orders/{order}/items/{item}` | `orders.items.delete` | Remove Draft item (Soft Delete); reject removing final item. Retain historic service references. |
+| `POST /api/v1/orders/{order}/items` | `orders.items.create` | Add item to Draft. HTTP 200, localized message and `data: null`. |
+| `PUT/PATCH /api/v1/orders/{order}/items/{item}` | `orders.items.update` | Update Draft item serviceId/quantity/specifications/agreedTotal; recompute totals. HTTP 200, localized message and `data: null`. |
+| `DELETE /api/v1/orders/{order}/items/{item}` | `orders.items.delete` | Remove Draft item (Soft Delete), archive any public files in private storage. Reject removing final item. HTTP 200 `data: null`. |
 | `POST /api/v1/orders/{order}/items/{item}/files` | `orders.files.upload` | Upload file to public disk; return metadata including direct public URL. |
 | `GET /api/v1/orders/{order}/items/{item}/files` | `orders.files.list` | Return file metadata with public URL (or null for legacy private files); no expiry. |
 | `GET /api/v1/orders/{order}/items/{item}/files/{file}` | `orders.files.view` | Authenticated forced download (binary); validate nested ownership. |
 
-| `DELETE /api/v1/orders/{order}/items/{item}/files/{file}` | `orders.files.delete` | Soft Delete attachment metadata for Draft; retain stored bytes for possible audited recovery. |
+| `DELETE /api/v1/orders/{order}/items/{item}/files/{file}` | `orders.files.delete` | Move file from public to private under the same relative path, mark record disk `local` and Soft Delete. HTTP 200 `data: null`. |
 | `GET /api/v1/orders/{order}/activities` | `orders.activities.view` | Paginated important history ordered newest first. |
-| `DELETE /api/v1/orders/{order}` | `orders.delete` only | Any user with `orders.delete` may Soft Delete a Draft (no Finance effects), regardless of role; preserve history and refs. |
+| `DELETE /api/v1/orders/{order}` | `orders.delete` only | Soft Delete a Draft, moving related public files to private storage while preserving history and refs; any role with this permission. |
 | `POST /api/v1/orders/{order}/confirm` | `orders.confirm` | **Explicitly blocked HTTP 409** until Finance adapter is provided. Later requires Idempotency-Key, atomic order numbering and ledger liability/deposit posting. |
 | `POST /api/v1/orders/{order}/cancel` | `orders.cancel` | **Explicitly blocked HTTP 409** until Finance adapter implements reversal. Future cancel requires reason, stops production, leaves deposit as refundable credit until separate explicit Refund. |
 
@@ -127,11 +127,19 @@ Create shape (illustrative):
 
 - `POST /api/v1/orders` returns `201` with `success: true`, the existing localized `draft_created` or `confirmed` `message`, and `data: null`.
 - `PUT/PATCH /api/v1/orders/{order}` returns `200` with `success: true`, the existing localized `draft_updated` or `confirmed` `message`, and `data: null`.
-- This applies to both Draft and Confirmed requested statuses; `409` while Finance is unavailable stays unchanged. `GET /api/v1/orders` and `GET /api/v1/orders/{order}` continue to return full data. Order-item mutations and file uploads retain their existing response contracts.
+- This applies to Draft and Confirmed statuses; `409` while Finance is unavailable stays unchanged. GET order APIs still return full data. Item add/update/delete now also return only a localized message and `data: null`; file upload still returns File Resource.
 - The frontend cannot infer a newly created order/item ID from POST anymore; after creation, retrieve it via list/details APIs if navigation or file upload requires its ID.
 
 ### Approved integration decisions (October 24, 2026)
 
 - **Finance/deposit:** Payments are manual registrations of actual cash, bank transfers or e-wallet receipts; there is **no external payment gateway** such as Stripe. When Finance is built, the confirmation operation must register both order liability and any real deposit with amount, selected method and bank/wallet account ID (where applicable) in one transaction. Money belongs to Finance, not Orders; no temporary ledger, balance, or payment record now. Existing `depositAmount` request remains a future-finance placeholder and direct confirmation remains blocked (`409`) until real Finance is implemented. No extra payment-method fields are activated in Orders Core yet.
 - **Separate permissions:** Each Orders API action has its own Spatie permission, sharing permission only between PUT and PATCH for the same action. Run OrdersPermissionSeeder and RoleSeeder for admin; custom employee roles need explicit new grants, not implicit inheritance from `orders.update`.
-- **Public files:** The file resource returns a regular URL on the public disk. React can embed images/PDF directly. Links do not expire; existing private files have `url: null` until explicitly moved to the public disk.
+- **Active public files / private archives:** The file resource returns a direct public URL for active public files. Deleting the file, its Draft item or its Draft order moves the bytes into private `local` storage, retaining the relative path. The public URL then stops working. Legacy private records still return `url: null`.
+
+### File archive and write response cleanup (October 24, 2026)
+
+- FileResource omits `uploadedBy`, but `uploaded_by` is still saved in DB for audit.
+- All item mutation endpoints (create, update, delete) return `{ "success": true, "message": "<existing translated message>", "data": null }`. GET order details continues returning the current item list and totals.
+- On deletion of a file, Draft item or Draft order, each public file moves from `storage/app/public/orders/{orderId}/{itemId}/{filename}` to `storage/app/private/orders/{orderId}/{itemId}/{filename}`. Filename, bytes and relative path stay unchanged. The `order_item_files.disk` column becomes `local`; no database migration needed.
+- Deleted records keep their existing Soft Delete behavior. Old private uploads remain private, with no extra move. Archive paths are not made public.
+- Move operations participate in a controlled single-attempt database transaction. Missing public files, conflicting private targets, or database failures prevent committing the delete; already-moved files are restored to their public locations on rollback.
