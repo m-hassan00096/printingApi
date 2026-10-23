@@ -17,9 +17,12 @@ class OrdersStatusSelectionTest extends OrdersTestCase
     {
         $this->postJson('/api/v1/orders', $this->data(['status' => 0]))
             ->assertCreated()
-            ->assertJsonPath('data.status', 0)
-            ->assertJsonPath('data.orderNumber', null)
+            ->assertJsonPath('data', null)
             ->assertJsonPath('message', __('orders.messages.draft_created'));
+
+        $draft = Order::query()->firstOrFail();
+        $this->assertSame(OrderStatus::DRAFT, $draft->status);
+        $this->assertNull($draft->order_number);
 
         $this->assertDatabaseCount('orders', 1);
         $this->assertDatabaseCount('order_daily_sequences', 0);
@@ -72,20 +75,22 @@ class OrdersStatusSelectionTest extends OrdersTestCase
         $payload = $this->data(['status' => 1, 'depositAmount' => '100.00']);
         $this->withHeader('Idempotency-Key', 'direct-confirm-with-gateway');
 
-        $first = $this->postJson('/api/v1/orders', $payload)->assertCreated()
-            ->assertJsonPath('data.status', 1)
-            ->assertJsonPath('data.productionStatus', 0)
-            ->assertJsonPath('data.totalAmount', '350.00')
+        $this->postJson('/api/v1/orders', $payload)->assertCreated()
+            ->assertJsonPath('data', null)
             ->assertJsonPath('message', __('orders.messages.confirmed'));
 
-        $number = $first->json('data.orderNumber');
+        $order = Order::query()->firstOrFail();
+        $this->assertSame(OrderStatus::CONFIRMED, $order->status);
+        $this->assertSame('350.00', (string) $order->total_amount);
+        $this->assertSame(0, $order->production_status->value);
+        $number = $order->order_number;
         $this->assertMatchesRegularExpression('/^ORD-[0-9]{6}001$/', $number);
 
-        $second = $this->postJson('/api/v1/orders', $payload)->assertCreated()
-            ->assertJsonPath('data.status', 1)
-            ->assertJsonPath('data.orderNumber', $number);
+        $this->postJson('/api/v1/orders', $payload)->assertCreated()
+            ->assertJsonPath('data', null)
+            ->assertJsonPath('message', __('orders.messages.confirmed'));
 
-        $this->assertSame($first->json('data.id'), $second->json('data.id'));
+        $this->assertSame($number, $order->fresh()->order_number);
         $this->assertSame(1, $fake->calls);
         $this->assertSame('100.00', $fake->lastDeposit);
         $this->assertDatabaseCount('orders', 1);
@@ -93,7 +98,7 @@ class OrdersStatusSelectionTest extends OrdersTestCase
         $this->assertDatabaseCount('order_daily_sequences', 1);
         $this->assertDatabaseCount('order_activities', 2);
         $this->assertDatabaseHas('order_activities', [
-            'order_id' => $first->json('data.id'), 'event_type' => 'order_confirmed',
+            'order_id' => $order->id, 'event_type' => 'order_confirmed',
         ]);
     }
 
@@ -110,14 +115,16 @@ class OrdersStatusSelectionTest extends OrdersTestCase
                 'depositAmount' => '50.00',
             ])->assertOk()
             ->assertJsonPath('message', __('orders.messages.confirmed'))
-            ->assertJsonPath('data.status', 1)
-            ->assertJsonPath('data.productionStatus', 0)
-            ->assertJsonPath('data.customerId', $this->secondCustomer->id)
-            ->assertJsonPath('data.customerTypeId', $this->retail->id)
-            ->assertJsonPath('data.totalAmount', '350.00')
-            ->assertJsonPath('data.notes', 'Confirmed from edit');
+            ->assertJsonPath('data', null);
 
-        $this->assertMatchesRegularExpression('/^ORD-[0-9]{6}001$/', $draft->fresh()->order_number);
+        $draft->refresh();
+        $this->assertSame(OrderStatus::CONFIRMED, $draft->status);
+        $this->assertSame(0, $draft->production_status->value);
+        $this->assertSame($this->secondCustomer->id, $draft->customer_id);
+        $this->assertSame($this->retail->id, $draft->customer_type_id_snapshot);
+        $this->assertSame('350.00', (string) $draft->total_amount);
+        $this->assertSame('Confirmed from edit', $draft->notes);
+        $this->assertMatchesRegularExpression('/^ORD-[0-9]{6}001$/', $draft->order_number);
         $this->assertSame(1, $fake->calls);
         $this->assertSame('50.00', $fake->lastDeposit);
         $this->assertDatabaseHas('order_activities', [
@@ -182,7 +189,7 @@ class OrdersStatusSelectionTest extends OrdersTestCase
             ->assertForbidden();
 
         $this->postJson('/api/v1/orders', $this->data(['status' => 0]))
-            ->assertCreated()->assertJsonPath('data.status', 0);
+            ->assertCreated()->assertJsonPath('data', null);
 
         $this->assertDatabaseCount('orders', 2);
     }
