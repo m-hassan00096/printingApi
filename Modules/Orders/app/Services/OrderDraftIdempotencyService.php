@@ -14,6 +14,9 @@ class OrderDraftIdempotencyService
     public function create(array $data, string $key): Order
     {
         $actorId = (int) Auth::id();
+        // Idempotency keys are opaque and case-sensitive. Their SHA-256 digest
+        // is safe under MySQL case-insensitive collations and hides the raw key.
+        $key = hash('sha256', $key);
         $fingerprint = hash('sha256', json_encode(
             $this->canonicalize($data), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE,
         ));

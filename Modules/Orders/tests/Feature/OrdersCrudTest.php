@@ -47,6 +47,21 @@ class OrdersCrudTest extends OrdersTestCase
             ->assertJsonPath('message', __('orders.messages.idempotency_reused'));
     }
 
+    public function test_idempotency_keys_are_case_sensitive(): void
+    {
+        $first = $this->withHeader('Idempotency-Key', 'Example-Key-A')
+            ->postJson('/api/v1/orders', $this->data())->assertCreated();
+        $second = $this->withHeader('Idempotency-Key', 'example-key-a')
+            ->postJson('/api/v1/orders', $this->data())->assertCreated();
+
+        $this->assertNotSame($first->json('data.id'), $second->json('data.id'));
+        $this->assertDatabaseCount('orders', 2);
+        $this->assertDatabaseCount('order_idempotency_keys', 2);
+        $this->assertDatabaseMissing('order_idempotency_keys', [
+            'idempotency_key' => 'Example-Key-A',
+        ]);
+    }
+
     public function test_same_printing_service_may_appear_twice_with_distinct_specs(): void
     {
         $items = $this->data()['items'];

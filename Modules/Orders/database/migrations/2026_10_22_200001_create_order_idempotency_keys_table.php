@@ -11,6 +11,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('actor_id')->constrained('users')->restrictOnDelete();
             $table->string('operation', 48);
+            // SHA-256 hex of the case-sensitive Idempotency-Key; not raw text.
             $table->string('idempotency_key', 128);
             $table->char('request_hash', 64);
             $table->foreignId('order_id')->nullable()->constrained('orders')->restrictOnDelete();

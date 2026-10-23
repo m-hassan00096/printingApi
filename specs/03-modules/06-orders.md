@@ -97,6 +97,7 @@ Status, price source, customer type, total, production stage, delivery and times
 - A confirmed/other non-Draft order is read-only via current Core CRUD; future Orders+Finance/Production features will introduce controlled modifications and logged reversal effects.
 - Production/Deliveries later lock orders and items while changing stages/status, then recompute and persist production status. No client route may set production_status.
 - No fake finance or temporary ledger; default Finance gateway is unavailable (409) for Confirm/Cancel; do not claim success without journal posting.
+- Draft `Idempotency-Key` values are case-sensitive and stored only as SHA-256 digests to enforce exact uniqueness even with MySQL case-insensitive text collations.
 - The future Refund is **explicit** from Orders detail, posted by Finance when the user confirms payout; cancellation alone must not debit bank, cash, wallet or claim refund happened.
 
 ## 7. Testing and permissions
