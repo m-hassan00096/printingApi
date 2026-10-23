@@ -94,7 +94,7 @@ class OrdersGranularPermissionTest extends OrdersTestCase
 
     public function test_file_permissions_are_independent_for_upload_list_view_and_delete(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $order = $this->draft();
         $item = $order->items()->firstOrFail();
         $base = $this->path($order).'/items/'.$item->id.'/files';
@@ -115,7 +115,11 @@ class OrdersGranularPermissionTest extends OrdersTestCase
         $this->deleteJson($base.'/'.$id)->assertForbidden();
 
         $this->grant('orders.files.list');
-        $this->getJson($base)->assertOk()->assertJsonPath('data.0.url', null);
+        $publicUrl = $this->getJson($base)->assertOk()->json('data.0.url');
+        $this->assertNotNull($publicUrl);
+        $this->assertStringContainsString('/storage/orders/', $publicUrl);
+        // Public storage URLs deliberately do not require orders.files.view.
+        // Only the legacy authenticated binary API still requires that permission.
 
         $this->grant('orders.files.view');
         $this->get($base.'/'.$id)->assertOk();

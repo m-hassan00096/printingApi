@@ -9,9 +9,9 @@ use Modules\Orders\Tests\Feature\Support\OrdersTestCase;
 
 class OrdersFilesTest extends OrdersTestCase
 {
-    public function test_files_are_private_downloadable_and_soft_deletable(): void
+    public function test_files_are_publicly_stored_downloadable_and_soft_deletable(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $order = $this->draft();
         $item = $order->items()->firstOrFail();
         $path = $this->path($order).'/items/'.$item->id.'/files';
@@ -36,7 +36,7 @@ class OrdersFilesTest extends OrdersTestCase
 
     public function test_rejects_bad_upload_extensions(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $order = $this->draft();
         $item = $order->items()->first();
         $path = $this->path($order).'/items/'.$item->id.'/files';
@@ -48,7 +48,7 @@ class OrdersFilesTest extends OrdersTestCase
 
     public function test_rejects_executable_content_disguised_as_supported_file(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $order = $this->draft();
         $item = $order->items()->firstOrFail();
         $path = $this->path($order).'/items/'.$item->id.'/files';
@@ -66,7 +66,7 @@ class OrdersFilesTest extends OrdersTestCase
 
     public function test_valid_png_signature_is_accepted_without_exposing_internal_path(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $order = $this->draft();
         $item = $order->items()->firstOrFail();
         $path = $this->path($order).'/items/'.$item->id.'/files';
@@ -83,7 +83,7 @@ class OrdersFilesTest extends OrdersTestCase
 
     public function test_failed_upload_to_confirmed_order_removes_staged_file(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $order = $this->draft();
         $order->status = \Modules\Orders\Enums\OrderStatus::CONFIRMED;
         $order->save();
@@ -94,12 +94,12 @@ class OrdersFilesTest extends OrdersTestCase
         ], ['Accept' => 'application/json'])->assertStatus(409);
 
         $this->assertDatabaseCount('order_item_files', 0);
-        $this->assertSame([], Storage::disk('local')->allFiles('orders'));
+        $this->assertSame([], Storage::disk('public')->allFiles('orders'));
     }
 
     public function test_nested_order_item_file_access_is_scoped(): void
     {
-        Storage::fake('local');
+        Storage::fake('public');
         $first = $this->draft();
         $second = $this->draft(['customerId' => $this->secondCustomer->id]);
 
