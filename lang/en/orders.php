@@ -38,8 +38,21 @@ return [
     ],
     'delay' => ['no_due_date' => 'No due date', 'late' => 'Late', 'on_time' => 'On time'],
     'permissions' => [
-        'view' => 'View orders', 'create' => 'Create order draft',
+        'list' => 'List orders',
+        'view' => 'View order details', 'create' => 'Create order draft',
         'update' => 'Update order draft', 'delete' => 'Delete order draft',
+        'items' => [
+            'create' => 'Add order item',
+            'update' => 'Edit order item',
+            'delete' => 'Remove order item',
+        ],
+        'files' => [
+            'upload' => 'Upload order item file',
+            'list' => 'List order item files',
+            'view' => 'Preview and download order item files',
+            'delete' => 'Delete order item file',
+        ],
+        'activities' => ['view' => 'View order activity history'],
         'confirm' => 'Confirm order', 'cancel' => 'Cancel order',
     ],
 ];

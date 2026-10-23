@@ -50,9 +50,11 @@ abstract class OrdersTestCase extends TestCase
         $this->adminRole = Role::create(['name' => 'admin', 'guard_name' => 'web', 'status' => RoleStatus::ACTIVE]);
         $this->staffRole = Role::create(['name' => 'orders_staff', 'guard_name' => 'web', 'status' => RoleStatus::ACTIVE]);
         foreach ([
-            'orders.view', 'orders.create', 'orders.update', 'orders.delete',
-            'orders.confirm', 'orders.cancel', 'customers.update', 'customers.delete',
-            'printing_services.delete',
+            'orders.list', 'orders.view', 'orders.create', 'orders.update', 'orders.delete',
+            'orders.items.create', 'orders.items.update', 'orders.items.delete',
+            'orders.files.upload', 'orders.files.list', 'orders.files.view', 'orders.files.delete',
+            'orders.activities.view', 'orders.confirm', 'orders.cancel',
+            'customers.update', 'customers.delete', 'printing_services.delete',
         ] as $permission) {
             $this->adminRole->givePermissionTo(Permission::findOrCreate($permission, 'web'));
         }

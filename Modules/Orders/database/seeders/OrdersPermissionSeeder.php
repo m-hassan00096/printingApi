@@ -9,7 +9,12 @@ class OrdersPermissionSeeder extends Seeder
 {
     public function run(): void
     {
-        foreach (['view', 'create', 'update', 'delete', 'confirm', 'cancel'] as $action) {
+        foreach ([
+            'list', 'view', 'create', 'update', 'delete',
+            'items.create', 'items.update', 'items.delete',
+            'files.upload', 'files.list', 'files.view', 'files.delete',
+            'activities.view', 'confirm', 'cancel',
+        ] as $action) {
             $permission = Permission::firstOrCreate([
                 'name' => 'orders.'.$action,
                 'guard_name' => 'web',
