@@ -1,4 +1,4 @@
-# Tabaa — Orders Core Specification (v1.3)
+# Tabaa — Orders Core Specification (v1.4)
 
 > **Implementation scope:** Orders Core on `feature/orders` only: persisted quotations (Draft), products, pricing snapshots, upload/download of order-item files, list/search/filter, activities, safe deletion, customer/service reference guards, and lifecycle/finance contracts. **NO actual Finance, Production, or Deliveries mutations in this module.** Confirm and Cancel may not post without a real Finance adapter. This specification records business decisions reviewed October 22, 2026.
 
@@ -41,9 +41,9 @@
 - `total_amount` DECIMAL(12,2) sum of active item agreed totals; EGP only, string money. `created_by`, `updated_by`, `confirmed_at`, `delivered_at`, `cancelled_at`, `cancelled_by`, `cancellation_reason`, timestamps, Soft Deletes.
 - `order_items`: order_id, printing_service_id, service_name_snapshot, customer_type_id/name_snapshot, quantity unsigned positive integer, specifications nullable text, `agreed_total` DECIMAL(12,2), `production_stage` integer, designer_id nullable, printing_location_id nullable, created/updated by, timestamps and soft deletes.
 - Repeated service IDs among order items allowed. Changing an existing Draft item's **serviceId** creates a replacement item and Soft Deletes the old item, transferring its active file references, so historic service references and price snapshots are preserved; the returned replacement item has a new ID. Unit price displayed as **derived informational value** agreed_total / quantity (do not trust submitted unit price), total is authoritative.
-- `order_item_files`: order_item_id, private disk/path, original filename, extension, MIME, byte size, uploader id, soft deletes, timestamps. Supported images, PDF, doc/docx, xls/xlsx, psd, ai, exported Canva PNG/PDF. Max 100 MiB (104857600 bytes) **each**; protected authorized download; never expose public storage paths. Reject content whose file magic/signature is inconsistent with the supplied extension; this is not a substitute for antivirus scanning. The metadata resource returns a 15-minute temporary Laravel-signed URL only when `orders.files.view` is held; signed preview serves images/PDF inline and all other formats as attachments.
+- `order_item_files`: files are stored on Laravel's `public` disk with UUID filenames. API resources return `Storage::disk('public')->url($file->path)`. Original metadata, extension, MIME, size and uploader are saved; uploaded types and the 100 MiB limit remain unchanged.
 - `order_activities`: order_id, actor_id, event_type, structured metadata with relevant old/new values, immutable created_at. No every-keypress audit.
-- No order files are copied to public storage. Signed previews are read-only capabilities: file bytes live in private storage, and a link expires after 15 minutes or fails earlier when the file or parent is soft-deleted. Whoever possesses a valid signed link can view the file until expiration, even without an active session. Never log/share signed URLs.
+- New files are public and viewable directly through `/storage/...` after `php artisan storage:link`; public URLs do not expire. Files on the old `local` disk need a separate migration and return `url: null` meanwhile.
 
 ## 4. Pricing and snapshots
 
@@ -55,7 +55,7 @@
 
 ## 5. Orders Core CRUD API contracts (v1.1)
 
-API routes under `auth:sanctum` with one granular Spatie permission for each distinct action. The separate `/preview/orders/files/{file}` route is intentionally **not** an API route or session-authenticated: Laravel's `signed` middleware validates URL expiration/signature before serving permitted file types from private storage. Only authorized API responses can issue signed URLs. Standard `ApiResponse` success/message/data and 422 validation/409 business rules.
+API routes use Sanctum and granular permissions; the file URLs are ordinary public storage assets served directly by the web server. Signed preview routes are removed.
 
 | Endpoint | Permission | Behavior |
 |---|---|---|
@@ -66,10 +66,10 @@ API routes under `auth:sanctum` with one granular Spatie permission for each dis
 | `POST /api/v1/orders/{order}/items` | `orders.items.create` | Add item to Draft. |
 | `PUT/PATCH /api/v1/orders/{order}/items/{item}` | `orders.items.update` | Update Draft item serviceId/quantity/specifications/agreedTotal; recompute order total from agreed prices. |
 | `DELETE /api/v1/orders/{order}/items/{item}` | `orders.items.delete` | Remove Draft item (Soft Delete); reject removing final item. Retain historic service references. |
-| `POST /api/v1/orders/{order}/items/{item}/files` | `orders.files.upload` | multipart `file` single <=100MiB, private storage, record metadata. |
-| `GET /api/v1/orders/{order}/items/{item}/files` | `orders.files.list` | JSON array of file metadata, including `url` and `expiresAt` only for users who **also** have `orders.files.view`. No private disk/path. |
+| `POST /api/v1/orders/{order}/items/{item}/files` | `orders.files.upload` | Upload file to public disk; return metadata including direct public URL. |
+| `GET /api/v1/orders/{order}/items/{item}/files` | `orders.files.list` | Return file metadata with public URL (or null for legacy private files); no expiry. |
 | `GET /api/v1/orders/{order}/items/{item}/files/{file}` | `orders.files.view` | Authenticated forced download (binary); validate nested ownership. |
-| `GET /preview/orders/files/{file}` | `signed` (15-min capability) | Absolute temporary-signed URL generated for users with `orders.files.view`; does **not** require a session to consume; stream images/PDF inline, others as attachments, with no-cache/nosniff/referrer protections. 403 invalid/expired, 404 deleted file or deleted parent. |
+
 | `DELETE /api/v1/orders/{order}/items/{item}/files/{file}` | `orders.files.delete` | Soft Delete attachment metadata for Draft; retain stored bytes for possible audited recovery. |
 | `GET /api/v1/orders/{order}/activities` | `orders.activities.view` | Paginated important history ordered newest first. |
 | `DELETE /api/v1/orders/{order}` | `orders.delete` only | Any user with `orders.delete` may Soft Delete a Draft (no Finance effects), regardless of role; preserve history and refs. |
@@ -106,7 +106,7 @@ Create shape (illustrative):
 
 ## 7. Testing and permissions
 
-- Permissions: `orders.list`, `orders.view`, `orders.create`, `orders.update`, `orders.delete`, `orders.items.create`, `orders.items.update`, `orders.items.delete`, `orders.files.upload`, `orders.files.list`, `orders.files.view`, `orders.files.delete`, `orders.activities.view`, `orders.confirm`, `orders.cancel`. `orders.files.list` only lists metadata; a signed preview URL is only issued with `orders.files.view` permission. `orders.view` does not implicitly grant file metadata access.
+- Permissions remain granular. `orders.files.list` controls metadata; `orders.files.view` controls the legacy authenticated download API, not public URLs.
 - PHPUnit feature coverage: auth, permission isolation, safe draft create/update, customer reassignment & pricing snapshots, multiple same-service items, search/filter/pagination, immutable confirmed state, safe draft-only soft-delete, file authorization and size, guard behavior, failure of Confirm/Cancel without Finance, **status=0 and status=1 request contracts** (including atomic rollback and idempotency), localization.
 - MySQL CI: migration constraints, concurrency on customer and service locks, future daily sequence uniqueness under InnoDB. Never run destructive migrate:fresh tests against a non-CI database.
 - Use `lang/ar/orders.php` and `lang/en/orders.php` for every user-visible message. API fields camelCase. Do not return money as JSON floats.
@@ -134,4 +134,4 @@ Create shape (illustrative):
 
 - **Finance/deposit:** Payments are manual registrations of actual cash, bank transfers or e-wallet receipts; there is **no external payment gateway** such as Stripe. When Finance is built, the confirmation operation must register both order liability and any real deposit with amount, selected method and bank/wallet account ID (where applicable) in one transaction. Money belongs to Finance, not Orders; no temporary ledger, balance, or payment record now. Existing `depositAmount` request remains a future-finance placeholder and direct confirmation remains blocked (`409`) until real Finance is implemented. No extra payment-method fields are activated in Orders Core yet.
 - **Separate permissions:** Each Orders API action has its own Spatie permission, sharing permission only between PUT and PATCH for the same action. Run OrdersPermissionSeeder and RoleSeeder for admin; custom employee roles need explicit new grants, not implicit inheritance from `orders.update`.
-- **Private files:** `GET /api/v1/orders/{order}` includes `items[].files` only with `orders.files.list`; their `url` and `expiresAt` are non-null only with `orders.files.view`. The separate list endpoint returns metadata. Signed `url` is not a public file path nor a `/api/v1/orders/...` URL; it points to `/preview/orders/files/{id}?expires=...&signature=...`. Images and PDF work with React `<img>` or `<iframe>`; Office and Adobe files use attachment download. 15-minute expiry, Laravel `signed` middleware and 404 after file/order/item soft delete. Permission revocation does not invalidate an already issued URL until expiration, but stops issuance of new signed URLs.
+- **Public files:** The file resource returns a regular URL on the public disk. React can embed images/PDF directly. Links do not expire; existing private files have `url: null` until explicitly moved to the public disk.
