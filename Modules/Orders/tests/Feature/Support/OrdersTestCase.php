@@ -133,7 +133,7 @@ abstract class OrdersTestCase extends TestCase
             ->postJson('/api/v1/orders', $this->data($changes));
         $response->assertCreated();
 
-        return Order::findOrFail($response->json('data.id'));
+        return Order::query()->latest('id')->firstOrFail();
     }
 
     protected function path(Order $order): string

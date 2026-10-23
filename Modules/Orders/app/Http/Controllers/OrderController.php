@@ -41,7 +41,6 @@ class OrderController extends Controller
         $order = $orders->create($data, $key);
 
         return ApiResponse::success(
-            data: (new OrderResource($order))->resolve($request),
             message: $order->status === OrderStatus::CONFIRMED
                 ? __('orders.messages.confirmed')
                 : __('orders.messages.draft_created'),
@@ -59,7 +58,6 @@ class OrderController extends Controller
         $updated = $orders->update($order, $data, $key);
 
         return ApiResponse::success(
-            data: (new OrderResource($updated))->resolve($request),
             message: $updated->status === OrderStatus::CONFIRMED
                 ? __('orders.messages.confirmed')
                 : __('orders.messages.draft_updated'),
