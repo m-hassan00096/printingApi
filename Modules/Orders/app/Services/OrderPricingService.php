@@ -4,18 +4,14 @@ namespace Modules\Orders\Services;
 use Illuminate\Validation\ValidationException;
 use Modules\Customers\Enums\CustomerStatus;
 use Modules\Customers\Models\Customer;
-use Modules\Orders\Exceptions\OrdersBusinessException;
 use Modules\Orders\Models\Order;
 use Modules\Orders\Models\OrderItem;
 use Modules\Orders\Support\OrderMoney;
 use Modules\PrintingServices\Enums\PrintingServiceStatus;
 use Modules\PrintingServices\Models\PrintingService;
-use Modules\PrintingServices\Services\PriceResolver;
 
 class OrderPricingService
 {
-    public function __construct(private readonly PriceResolver $resolver) {}
-
     /** Call inside a transaction before writing references. */
     public function activeCustomer(int $id): Customer
     {
@@ -53,51 +49,24 @@ class OrderPricingService
 
     public function applyItem(OrderItem $item, Order $order, PrintingService $service, array $data): void
     {
-        $quantity = (int) $data['quantity'];
-        $agreedTotal = OrderMoney::format(OrderMoney::cents((string) $data['agreedTotal']));
-        $preview = $this->resolver->resolve($service, (int) $order->customer_type_id_snapshot, $quantity);
-        $suggested = $preview['suggestedTotal'];
-        if ($suggested !== null && ! OrderMoney::valid($suggested)) {
-            // PrintingServices permits wider prices (DECIMAL 30,2), but Orders
-            // stores DECIMAL(12,2); fail with 422 rather than a database error.
-            throw ValidationException::withMessages([
-                'items' => __('orders.messages.total_overflow'),
-            ]);
-        }
-
+        // Agreed price always comes from the form; the frontend shows suggested
+        // prices using PrintingServices separately.
         $item->printing_service_id = $service->id;
         $item->service_name_snapshot = $service->name;
         $item->customer_type_id_snapshot = $order->customer_type_id_snapshot;
         $item->customer_type_name_snapshot = $order->customer_type_name_snapshot;
-        $item->quantity = $quantity;
+        $item->quantity = (int) $data['quantity'];
         $item->specifications = $data['specifications'] ?? null;
-        $item->agreed_total = $agreedTotal;
-        $item->suggested_total = $suggested;
-        $item->price_source = $preview['source'];
-        $item->was_manually_priced = $suggested === null || $suggested !== $agreedTotal;
+        $item->agreed_total = OrderMoney::format(OrderMoney::cents((string) $data['agreedTotal']));
     }
 
-    public function refreshSuggestionsForNewCustomer(Order $order): void
+    public function refreshCustomerTypeSnapshots(Order $order): void
     {
-        foreach ($order->items()->orderBy('printing_service_id')->get() as $item) {
-            $service = $this->activeService((int) $item->printing_service_id);
-
-            // A Draft's final edited price remains authoritative; only suggested
-            // pricing and type snapshots are updated after customer reassignment.
-            $preview = $this->resolver->resolve(
-                $service, (int) $order->customer_type_id_snapshot, (int) $item->quantity,
-            );
-            if ($preview['suggestedTotal'] !== null && ! OrderMoney::valid($preview['suggestedTotal'])) {
-                throw ValidationException::withMessages([
-                    'items' => __('orders.messages.total_overflow'),
-                ]);
-            }
+        // Changing a Draft's customer must never overwrite the user's price.
+        // The frontend may fetch and display new suggestions separately.
+        foreach ($order->items()->get() as $item) {
             $item->customer_type_id_snapshot = $order->customer_type_id_snapshot;
             $item->customer_type_name_snapshot = $order->customer_type_name_snapshot;
-            $item->suggested_total = $preview['suggestedTotal'];
-            $item->price_source = $preview['source'];
-            $item->was_manually_priced = $preview['suggestedTotal'] === null
-                || $preview['suggestedTotal'] !== (string) $item->agreed_total;
             $item->save();
         }
     }

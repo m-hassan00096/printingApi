@@ -1,7 +1,6 @@
 <?php
 namespace Modules\Orders\Services;
 
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Modules\Orders\Enums\OrderItemStage;
 use Modules\Orders\Enums\OrderSource;
@@ -55,7 +54,7 @@ class DraftOrderService
                 $customer = $this->pricing->activeCustomer((int) $data['customerId']);
                 $this->pricing->applyCustomer($locked, $customer);
                 $locked->save();
-                $this->pricing->refreshSuggestionsForNewCustomer($locked);
+                $this->pricing->refreshCustomerTypeSnapshots($locked);
                 $changes['customerId'] = ['from' => $oldId, 'to' => $customer->id];
             }
 
@@ -141,8 +140,6 @@ class DraftOrderService
 
                 if (array_key_exists('agreedTotal', $data)) {
                     $item->agreed_total = OrderMoney::format(OrderMoney::cents((string) $data['agreedTotal']));
-                    $item->was_manually_priced = $item->suggested_total === null
-                        || (string) $item->suggested_total !== (string) $item->agreed_total;
                 }
             }
 
@@ -180,10 +177,6 @@ class DraftOrderService
 
     public function delete(Order $order): void
     {
-        if (! Auth::user()?->hasRole('admin')) {
-            throw new OrdersBusinessException('admin_only_delete');
-        }
-
         DB::transaction(function () use ($order): void {
             $locked = Order::query()->whereKey($order->getKey())->lockForUpdate()->firstOrFail();
 

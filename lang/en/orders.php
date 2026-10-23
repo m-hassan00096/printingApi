@@ -18,7 +18,6 @@ return [
         'service_in_use' => 'This printing service is referenced by historic order items.',
         'total_overflow' => 'The order amount exceeds the allowed limit.',
         'finance_unavailable' => 'Order confirmation and cancellation require a working Finance integration.',
-        'admin_only_delete' => 'Only the system administrator may delete drafts.',
         'file_unavailable' => 'The requested file is not available.',
         'file_content_invalid' => 'File contents do not match the supplied file type.',
         'file_extension' => 'This file format is not supported.',

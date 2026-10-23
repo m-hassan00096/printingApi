@@ -19,8 +19,7 @@ class OrderItem extends Model
     {
         return [
             'quantity' => 'integer',
-            'agreed_total' => 'decimal:2', 'suggested_total' => 'decimal:2',
-            'was_manually_priced' => 'boolean',
+            'agreed_total' => 'decimal:2',
             'production_stage' => OrderItemStage::class,
         ];
     }
