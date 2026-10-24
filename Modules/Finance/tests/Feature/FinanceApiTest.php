@@ -213,4 +213,86 @@ class FinanceApiTest extends OrdersTestCase
         $this->assertDatabaseCount('finance_ledger_entries', 0);
     }
 
+    public function test_payment_and_customer_references_are_validated_by_requests(): void
+    {
+        $this->withHeader('Idempotency-Key', '')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $this->customer->id, 'amount' => '10.00',
+                'paymentMethod' => 0,
+            ])->assertUnprocessable()->assertJsonValidationErrors('Idempotency-Key');
+
+        $this->withHeader('Idempotency-Key', 'unknown-customer')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => 999999, 'amount' => '10.00', 'paymentMethod' => 0,
+            ])->assertUnprocessable()->assertJsonValidationErrors('customerId');
+
+        $this->withHeader('Idempotency-Key', 'invalid-order-reference')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $this->customer->id, 'amount' => '10.00',
+                'paymentMethod' => 0, 'orderId' => 999999,
+            ])->assertUnprocessable()->assertJsonValidationErrors('orderId');
+
+        $this->withHeader('Idempotency-Key', 'zero-amount')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $this->customer->id, 'amount' => '0.00', 'paymentMethod' => 0,
+            ])->assertUnprocessable()->assertJsonValidationErrors('amount');
+
+        $this->assertDatabaseCount('finance_collections', 0);
+        $this->assertDatabaseCount('finance_ledger_entries', 0);
+    }
+
+    public function test_each_finance_index_accepts_only_its_own_filters(): void
+    {
+        $this->getJson('/api/v1/finance/collections?filter[type]=1')
+            ->assertUnprocessable()->assertJsonValidationErrors('filter');
+        $this->getJson('/api/v1/finance/collections/summary?filter[status]=2')
+            ->assertUnprocessable()->assertJsonValidationErrors('filter');
+        $this->getJson('/api/v1/finance/refunds?filter[source]=1')
+            ->assertUnprocessable()->assertJsonValidationErrors('filter');
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id.'/ledger?filter[paymentMethod]=1')
+            ->assertUnprocessable()->assertJsonValidationErrors('filter');
+        $this->getJson('/api/v1/finance/collections?filter[dateFrom]=2026-10-24&filter[dateTo]=2026-10-23')
+            ->assertUnprocessable()->assertJsonValidationErrors('filter.dateTo');
+    }
+
+    public function test_order_confirmation_uses_request_for_payment_destination_validation(): void
+    {
+        $draft = $this->draft();
+        $this->withHeader('Idempotency-Key', 'bad-deposit-destination')
+            ->postJson($this->path($draft).'/confirm', [
+                'depositAmount' => '100.00', 'paymentMethod' => 1, 'paymentDestinationId' => 987654,
+            ])->assertUnprocessable()->assertJsonValidationErrors('paymentDestinationId');
+
+        $this->assertSame(OrderStatus::DRAFT, $draft->fresh()->status);
+        $this->assertDatabaseCount('finance_ledger_entries', 0);
+        $this->assertDatabaseCount('finance_collections', 0);
+    }
+
+    public function test_posted_ledger_entry_cannot_be_modified_or_deleted(): void
+    {
+        $this->postJson('/api/v1/finance/customers/'.$this->customer->id.'/opening-balance', [
+            'amount' => '50.00', 'type' => 1,
+        ])->assertCreated();
+
+        $entry = LedgerEntry::query()->firstOrFail();
+        try {
+            $entry->signed_amount = '80.00';
+            $entry->save();
+            $this->fail('Expected immutable movement rejection');
+        } catch (\LogicException $e) {
+            $this->assertStringContainsString('immutable', $e->getMessage());
+        }
+
+        try {
+            $entry->delete();
+            $this->fail('Expected ledger deletion rejection');
+        } catch (\LogicException $e) {
+            $this->assertStringContainsString('cannot be deleted', $e->getMessage());
+        }
+
+        $this->assertDatabaseHas('finance_ledger_entries', [
+            'id' => $entry->id, 'signed_amount' => '50.00',
+        ]);
+    }
+
 }

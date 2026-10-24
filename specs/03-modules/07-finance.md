@@ -91,3 +91,11 @@ Deliveries later will consume an internal Finance posting contract and call it i
 - Payments posted for inactive customers remain supported.
 - Existing Orders CRUD and permissions regressions remain green.
 - Pending delivery integration deliberately not implemented in Finance v1.
+
+## 8. Responsibility boundaries from final code review
+
+- Form Requests own syntactic and reference validations: positive monetary decimal strings, numeric integer-backed enums, payment method/destination consistency (Settings contract), optional order ownership (Orders contract), opening balance shape, reversal reason, idempotency header and endpoint-specific query filter allowlists.
+- Opening balance posting lives in `CreateOpeningBalanceAction`, not its controller. Domain service still verifies uniqueness inside the locked transaction; duplicates throw localized `FinanceException` (409).
+- Ledger Eloquent model rejects updates and deletes after posting. Corrections are new opposite entries; no financial mutations through controllers.
+- In rare concurrent deactivation after Request validation, Finance rechecks the selected destination under lock and returns business conflict; Request never substitutes for transaction safety.
+- Cancel order reverses the amount of its original posted liability, not a second copy of the order total.
