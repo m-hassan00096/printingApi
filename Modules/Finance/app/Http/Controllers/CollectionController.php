@@ -11,6 +11,8 @@ use Modules\Orders\Contracts\OrderFinanceReference;
 use Modules\Finance\Enums\CollectionStatus;
 use Modules\Finance\Enums\PaymentMethod;
 use Modules\Finance\Http\Requests\FinanceIndexRequest;
+use Modules\Finance\Http\Requests\CollectionIndexRequest;
+use Modules\Finance\Http\Requests\CollectionSummaryRequest;
 use Modules\Finance\Http\Requests\StoreCollectionRequest;
 use Modules\Finance\Http\Requests\ReverseCollectionRequest;
 use Modules\Finance\Http\Resources\CollectionResource;
@@ -20,7 +22,7 @@ use Modules\Finance\Services\IdempotencyService;
 
 class CollectionController extends Controller
 {
-    public function index(FinanceIndexRequest $request): JsonResponse
+    public function index(CollectionIndexRequest $request): JsonResponse
     {
         $p = $this->query($request)->paginate((int) $request->input('perPage', 20));
         return ApiResponse::success(data: [
@@ -30,7 +32,7 @@ class CollectionController extends Controller
         ]);
     }
 
-    public function summary(FinanceIndexRequest $request): JsonResponse
+    public function summary(CollectionSummaryRequest $request): JsonResponse
     {
         $grouped = $this->query($request)->where('status', CollectionStatus::POSTED->value)
             ->reorder()->select('payment_method')->selectRaw('SUM(amount) as total_amount')

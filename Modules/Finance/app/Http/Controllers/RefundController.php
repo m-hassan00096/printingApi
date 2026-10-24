@@ -6,7 +6,7 @@ use App\Helpers\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
-use Modules\Finance\Http\Requests\FinanceIndexRequest;
+use Modules\Finance\Http\Requests\RefundIndexRequest;
 use Modules\Finance\Http\Requests\StoreRefundRequest;
 use Modules\Finance\Http\Resources\RefundResource;
 use Modules\Finance\Models\Refund;
@@ -15,7 +15,7 @@ use Modules\Finance\Services\IdempotencyService;
 
 class RefundController extends Controller
 {
-    public function index(FinanceIndexRequest $request): JsonResponse
+    public function index(RefundIndexRequest $request): JsonResponse
     {
         $filters = $request->validated('filter', []);
         $q = Refund::query();

@@ -5,7 +5,7 @@ use App\Enums\HttpStatusCode;
 use App\Helpers\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
-use Modules\Finance\Http\Requests\FinanceIndexRequest;
+use Modules\Finance\Http\Requests\LedgerIndexRequest;
 use Modules\Finance\Http\Requests\StoreOpeningBalanceRequest;
 use Modules\Finance\Actions\CreateOpeningBalanceAction;
 use Modules\Finance\Models\LedgerEntry;
@@ -20,7 +20,7 @@ class CustomerFinanceController extends Controller
         return ApiResponse::success(data: ['customerId' => $customer] + $ledger->balance($customer));
     }
 
-    public function ledger(int $customer, FinanceIndexRequest $request, LedgerService $ledger): JsonResponse
+    public function ledger(int $customer, LedgerIndexRequest $request, LedgerService $ledger): JsonResponse
     {
         $this->assertCustomer($customer);
         $filters = $request->validated('filter', []);
