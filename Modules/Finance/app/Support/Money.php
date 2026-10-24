@@ -8,7 +8,7 @@ final class Money
     /** Integer cents avoid floating-point rounding, including ledger SUMs. */
     public static function cents(string $amount): int
     {
-        if (! preg_match('/\A(-?)(0|[1-9][0-9]{0,9})(?:\.([0-9]{1,2}))?\z/D', $amount, $m)) {
+        if (! preg_match('/\A(-?)(0|[1-9][0-9]{0,14})(?:\.([0-9]{1,2}))?\z/D', $amount, $m)) {
             throw new InvalidArgumentException('Invalid decimal money');
         }
         $value = ((int) $m[2] * 100) + (int) str_pad($m[3] ?? '', 2, '0');

@@ -13,4 +13,9 @@ class OrderFinanceReferenceService implements OrderFinanceReference
             throw ValidationException::withMessages(['orderId' => __('validation.exists', ['attribute' => 'orderId'])]);
         }
     }
+
+    public function findOrderIdsByNumber(string $search): array
+    {
+        return Order::withTrashed()->where('order_number', 'like', '%'.$search.'%')->pluck('id')->all();
+    }
 }

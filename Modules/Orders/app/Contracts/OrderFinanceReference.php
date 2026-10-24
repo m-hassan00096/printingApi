@@ -5,4 +5,7 @@ namespace Modules\Orders\Contracts;
 interface OrderFinanceReference
 {
     public function assertCustomerOwnsOrder(int $orderId, int $customerId): void;
+
+    /** @return list<int> */
+    public function findOrderIdsByNumber(string $search): array;
 }

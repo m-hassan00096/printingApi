@@ -31,15 +31,18 @@ class CollectionController extends Controller
 
     public function summary(FinanceIndexRequest $request): JsonResponse
     {
-        $records = $this->query($request)->where('status', CollectionStatus::POSTED->value)
-            ->get(['payment_method', 'amount']);
+        $grouped = $this->query($request)->where('status', CollectionStatus::POSTED->value)
+            ->reorder()->select('payment_method')->selectRaw('SUM(amount) as total_amount')
+            ->selectRaw('COUNT(*) as aggregate_count')->groupBy('payment_method')->get();
         $totals = [0 => 0, 1 => 0, 2 => 0];
-        foreach ($records as $record) {
-            $totals[$record->payment_method->value] += \Modules\Finance\Support\Money::cents((string) $record->amount);
+        $count = 0;
+        foreach ($grouped as $group) {
+            $totals[$group->payment_method->value] = \Modules\Finance\Support\Money::cents((string) $group->total_amount);
+            $count += (int) $group->aggregate_count;
         }
         return ApiResponse::success(data: [
             'totalCollected' => \Modules\Finance\Support\Money::format(array_sum($totals)),
-            'collectionsCount' => $records->count(),
+            'collectionsCount' => $count,
             'cashTotal' => \Modules\Finance\Support\Money::format($totals[0]),
             'bankTotal' => \Modules\Finance\Support\Money::format($totals[1]),
             'walletTotal' => \Modules\Finance\Support\Money::format($totals[2]),
@@ -79,10 +82,12 @@ class CollectionController extends Controller
         if (isset($filters['status'])) $q->where('status', $filters['status']);
         if (! empty($filters['search'])) {
             $needle = $filters['search'];
-            $q->where(function ($where) use ($needle): void {
+            $matchingOrders = app(OrderFinanceReference::class)->findOrderIdsByNumber($needle);
+            $q->where(function ($where) use ($needle, $matchingOrders): void {
                 $where->where('receipt_number', 'like', '%'.$needle.'%')
                     ->orWhere('customer_name_snapshot', 'like', '%'.$needle.'%')
                     ->orWhere('customer_phone_snapshot', 'like', '%'.$needle.'%');
+                if ($matchingOrders !== []) $where->orWhereIn('order_id', $matchingOrders);
             });
         }
         $sort = $request->input('sort', '-id');
