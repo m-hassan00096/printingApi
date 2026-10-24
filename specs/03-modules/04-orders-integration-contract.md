@@ -1,8 +1,8 @@
 # Tabaa — Orders Integration Contract (future module)
 
-> **Status:** Integration requirements for the future Orders module. **Orders models, migrations, tables, routes, and production usage guard are not implemented by this document.**
+> **Status:** Original integration requirements, now implemented in Orders Core on `feature/orders` (see `06-orders.md`). The table/guard implementation resides in Orders, not PrintingServices.
 > **Linked modules:** PrintingServices, Customers, Settings, Identity.
-> **Reference branch:** feature/printing-services.
+> **Reference branch:** feature/orders (implementation); earlier reference was feature/printing-services.
 
 ## 1. Ownership and modular dependency
 

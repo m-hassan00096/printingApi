@@ -130,18 +130,13 @@ class PrintingServicesTranslationsTest extends PrintingServiceTestCase
                 'خدمة الطباعة غير نشطة ولا يمكن استخدامها في طلب جديد.',
             );
 
-        Schema::create('order_items', function (Blueprint $table): void {
-            $table->id();
-            $table->foreignId('printing_service_id')->constrained('printing_services');
-        });
-        DB::table('order_items')->insert(['printing_service_id' => $service->id]);
-        app(PrintingServiceUsageRegistry::class)->register(FakeOrderServiceUsageGuard::class);
+        $this->historicalOrderItem($service);
 
         $this->deleteJson('/api/v1/printing-services/'.$service->id)
             ->assertStatus(409)
             ->assertJsonPath(
                 'message',
-                __('printing_services.messages.service_in_use'),
+                __('orders.messages.service_in_use'),
             );
     }
 }

@@ -1,0 +1,33 @@
+<?php
+namespace Modules\Orders\Http\Resources;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+use Modules\Orders\Support\OrderMoney;
+
+class OrderItemResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        return [
+            'id' => $this->id,
+            'serviceId' => $this->printing_service_id,
+            'serviceName' => $this->service_name_snapshot,
+            'customerTypeId' => $this->customer_type_id_snapshot,
+            'customerTypeName' => $this->customer_type_name_snapshot,
+            'quantity' => $this->quantity,
+            'specifications' => $this->specifications,
+            'agreedTotal' => (string) $this->agreed_total,
+            'unitPrice' => OrderMoney::unitPrice((string) $this->agreed_total, (int) $this->quantity),
+            'productionStage' => $this->production_stage->value,
+            'designerId' => $this->designer_id,
+            'printingLocationId' => $this->printing_location_id,
+            // A user permitted to view an order is not automatically allowed
+            // to enumerate that order's files.
+            'files' => $this->when(
+                $request->user()?->can('orders.files.list') === true && $this->relationLoaded('files'),
+                fn (): array => OrderItemFileResource::collection($this->files)->resolve($request),
+            ),
+        ];
+    }
+}

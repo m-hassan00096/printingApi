@@ -2,5 +2,6 @@
     "Identity": true,
     "Settings": true,
     "PrintingServices": true,
-    "Customers": true
+    "Customers": true,
+    "Orders": true
 }
