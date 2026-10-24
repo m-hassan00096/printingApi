@@ -13,5 +13,6 @@ class OrdersServiceProvider extends ModuleServiceProvider
         OrdersIntegrationServiceProvider::class,
         OrdersFinanceReferenceProvider::class,
         OrdersProductionIntegrationServiceProvider::class,
+        OrdersDeliveriesIntegrationServiceProvider::class,
     ];
 }

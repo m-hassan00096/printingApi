@@ -11,5 +11,6 @@ class FinanceServiceProvider extends ModuleServiceProvider
     protected array $providers = [
         RouteServiceProvider::class,
         FinanceIntegrationServiceProvider::class,
+        FinanceDeliveriesIntegrationServiceProvider::class,
     ];
 }

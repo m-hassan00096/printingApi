@@ -1,0 +1,11 @@
+{
+  "name": "Deliveries",
+  "alias": "deliveries",
+  "description": "Physical order handover and cancellation linked atomically to Finance",
+  "keywords": [],
+  "priority": 0,
+  "providers": [
+    "Modules\\Deliveries\\Providers\\DeliveriesServiceProvider"
+  ],
+  "files": []
+}
