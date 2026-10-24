@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Modules\Orders\Enums\OrderItemStage;
 use Modules\PrintingServices\Models\PrintingService;
+use Modules\Identity\Models\User;
 
 class OrderItem extends Model
 {
@@ -32,6 +33,11 @@ class OrderItem extends Model
     public function printingService(): BelongsTo
     {
         return $this->belongsTo(PrintingService::class, 'printing_service_id')->withTrashed();
+    }
+
+    public function designer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'designer_id')->withTrashed();
     }
 
     public function files(): HasMany
