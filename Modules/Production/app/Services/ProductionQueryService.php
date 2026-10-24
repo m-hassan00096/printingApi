@@ -1,6 +1,7 @@
 <?php
 namespace Modules\Production\Services;
 
+use Illuminate\Database\Eloquent\Builder;
 use Modules\Production\Contracts\ProductionOrderGateway;
 use Modules\Production\Enums\ProductionEventType;
 use Modules\Production\Models\ProductionItemEvent;
@@ -10,14 +11,15 @@ class ProductionQueryService
 {
     public function __construct(private readonly ProductionOrderGateway $orders, private readonly PrintingLocationLookup $locations) {}
 
-    private function myItems(array $filters, int $actorId): ?array
+    private function myItems(array $filters, int $actorId): ?Builder
     {
         $mode = $filters['myDesignWork'] ?? null;
         if ($mode === null) return null;
         $type = (int) $mode === 1 ? ProductionEventType::DESIGN_STARTED : ProductionEventType::DESIGN_COMPLETED;
 
-        return ProductionItemEvent::query()->where('actor_id', $actorId)
-            ->where('event_type', $type->value)->distinct()->pluck('order_item_id')->all();
+        // SQL subquery is executed by Orders, with bound actor ID and indexed event type.
+        return ProductionItemEvent::query()->select('order_item_id')
+            ->where('actor_id', $actorId)->where('event_type', $type->value)->distinct();
     }
 
     public function items(array $filters, int $page, int $perPage, string $sort, int $actorId): array
@@ -32,12 +34,15 @@ class ProductionQueryService
             $completers = ProductionItemEvent::query()->whereIn('id', $lastIds)
                 ->get()->keyBy('order_item_id')->all();
         }
+        $locationIds = array_values(array_unique(array_filter(array_column($result['items'], 'printingLocationId'),
+            static fn ($id): bool => $id !== null)));
+        $locationNames = $this->locations->names($locationIds);
         foreach ($result['items'] as &$item) {
             $id = $item['id'];
             $stage = (int) $item['productionStage'];
             $item['productionStageLabel'] = __('production.stages.'.$stage);
             $item['printingLocationName'] = $item['printingLocationId'] === null
-                ? null : $this->locations->name((int) $item['printingLocationId']);
+                ? null : ($locationNames[(int) $item['printingLocationId']] ?? null);
             $item['designCompletedById'] = isset($completers[$id]) ? $completers[$id]->actor_id : null;
             $item['designCompletedByName'] = isset($completers[$id]) ? $completers[$id]->actor_name_snapshot : null;
         }

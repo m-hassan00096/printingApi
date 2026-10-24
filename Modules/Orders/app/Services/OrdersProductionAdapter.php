@@ -137,9 +137,9 @@ class OrdersProductionAdapter implements ProductionOrderGateway
         return $events;
     }
 
-    public function listItems(array $filters, int $page, int $perPage, string $sort, ?array $myItemIds): array
+    public function listItems(array $filters, int $page, int $perPage, string $sort, ?Builder $myItemQuery): array
     {
-        $query = $this->filtered($filters, $myItemIds)->with(['order', 'designer']);
+        $query = $this->filtered($filters, $myItemQuery)->with(['order', 'designer']);
         $column = (int) ($filters['column'] ?? -1);
         if ($column === 0) {
             $query->where('production_stage', 0);
@@ -191,13 +191,13 @@ class OrdersProductionAdapter implements ProductionOrderGateway
         ];
     }
 
-    public function summary(array $filters, ?array $myItemIds): array
+    public function summary(array $filters, ?Builder $myItemQuery): array
     {
-        $query = $this->filtered($filters, $myItemIds);
+        $query = $this->filtered($filters, $myItemQuery);
         $counts = $query->reorder()->selectRaw('order_items.production_stage, COUNT(*) AS item_count')
             ->groupBy('order_items.production_stage')->pluck('item_count', 'production_stage');
         $today = CarbonImmutable::now('Africa/Cairo')->toDateString();
-        $lateOrders = $this->filtered($filters, $myItemIds)
+        $lateOrders = $this->filtered($filters, $myItemQuery)
             ->whereHas('order', fn (Builder $q) => $q->whereDate('due_date', '<', $today))
             ->distinct()->count('order_items.order_id');
         return [
@@ -227,8 +227,9 @@ class OrdersProductionAdapter implements ProductionOrderGateway
         if (! empty($filters['lateOnly'])) {
             $query->whereHas('order', fn (Builder $q) => $q->whereDate('due_date', '<', $today));
         }
-        if ($myItemIds !== null) {
-            $query->whereIn('order_items.id', $myItemIds ?: [-1]);
+        if ($myItemQuery !== null) {
+            // Keep historical work filtering inside SQL; never load unbounded item IDs into PHP.
+            $query->whereIn('order_items.id', $myItemQuery);
         }
         if (! empty($filters['search'])) {
             $search = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], (string) $filters['search']);

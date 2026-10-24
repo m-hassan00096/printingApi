@@ -22,7 +22,7 @@ class SendBatchRequest extends ProductionWriteRequest
                 $validator->errors()->add('body', __('production.messages.unexpected_fields'));
             }
             if (! $validator->errors()->has('printingLocationId') && $this->filled('printingLocationId')
-                && ! app(PrintingLocationLookup::class)->available((int) $this->input('printingLocationId'))) {
+                && ! app(PrintingLocationLookup::class)->belongsToPrintingLocations((int) $this->input('printingLocationId'))) {
                 $validator->errors()->add('printingLocationId',
                     __('validation.exists', ['attribute' => 'printingLocationId']));
             }

@@ -1,6 +1,8 @@
 <?php
 namespace Modules\Production\Contracts;
 
+use Illuminate\Database\Eloquent\Builder;
+
 interface ProductionOrderGateway
 {
     /**
@@ -11,10 +13,10 @@ interface ProductionOrderGateway
     public function transition(array $itemIds, string $action, int $actorId, ?int $printingLocationId): array;
 
     /** @return array{items: list<array>, pagination: array} */
-    public function listItems(array $filters, int $page, int $perPage, string $sort, ?array $myItemIds): array;
+    public function listItems(array $filters, int $page, int $perPage, string $sort, ?Builder $myItemQuery): array;
 
     /** @return array */
-    public function summary(array $filters, ?array $myItemIds): array;
+    public function summary(array $filters, ?Builder $myItemQuery): array;
 
     /** Whether item is still a visible, confirmed item, also before showing history. */
     public function itemExists(int $itemId): bool;

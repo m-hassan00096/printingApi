@@ -192,3 +192,10 @@ php artisan test
 **Migration caution:** never use `migrate:fresh` on a populated environment.
 
 **Known intentional scope boundary:** physical delivery is owned by a future Deliveries module and is not implemented here. Undo after actual delivery is blocked by the Orders-owned gateway.
+
+## Code-review adjustments (2026-10-24)
+
+- The `myDesignWork` filter is now applied through a parameterized SQL subquery rather than loading every historical item ID into a PHP array. The Orders gateway accepts a framework Eloquent Builder containing only the item-id subquery; it never imports Production's event model.
+- Printing location names are resolved in a batch, with per-request memoization of location-name lookups.
+- Form Request checks printingLocationId shape and that it refers to the printing_locations group (HTTP 422); availability/active-state is verified while locked by the Production service (business HTTP 409). This distinction makes retries of already-successful operations safe after a location is disabled.
+- Tests cover replay after location deactivation and rejection of customer-type IDs masquerading as printers.

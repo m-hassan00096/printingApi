@@ -180,8 +180,7 @@ class ProductionApiTest extends OrdersTestCase
         $this->action($id, 'start-design')->assertOk();
         $this->action($id, 'complete-design')->assertOk();
         $this->postJson($url, ['orderItemIds' => [$id],
-            'printingLocationId' => $this->printer->id])->assertUnprocessable()
-            ->assertJsonValidationErrors('printingLocationId');
+            'printingLocationId' => $this->printer->id])->assertStatus(409);
         $this->assertDatabaseCount('production_item_events', 2);
     }
 
@@ -352,6 +351,39 @@ class ProductionApiTest extends OrdersTestCase
             ->assertJsonPath('data.items.0.orderId', $second->id);
         $this->getJson('/api/v1/production/summary?filter[customerId]='.$this->secondCustomer->id)
             ->assertJsonPath('data.notStartedCount', 1);
+    }
+
+    public function test_successful_idempotent_replay_survives_printer_deactivation(): void
+    {
+        $order = $this->confirmed();
+        $id = $this->item($order);
+        $this->action($id, 'start-design')->assertOk();
+        $this->action($id, 'complete-design')->assertOk();
+
+        $url = "/api/v1/production/items/$id/send-to-printing";
+        $payload = ['printingLocationId' => $this->printer->id];
+        $this->withHeader('Idempotency-Key', 'retry-after-disable')
+            ->postJson($url, $payload)->assertOk();
+
+        $this->printer->status = ParameterValueStatus::INACTIVE;
+        $this->printer->save();
+        $this->postJson($url, $payload)->assertOk();
+        $this->assertDatabaseCount('production_item_events', 3);
+        $this->assertDatabaseHas('order_items', [
+            'id' => $id, 'printing_location_id' => $this->printer->id, 'production_stage' => 3,
+        ]);
+    }
+
+    public function test_location_from_other_parameter_group_is_validation_error(): void
+    {
+        $order = $this->confirmed();
+        $id = $this->item($order);
+        $this->action($id, 'start-design')->assertOk();
+        $this->action($id, 'complete-design')->assertOk();
+
+        $this->action($id, 'send-to-printing', [
+            'printingLocationId' => $this->wholesale->id,
+        ])->assertUnprocessable()->assertJsonValidationErrors('printingLocationId');
     }
 
 }
