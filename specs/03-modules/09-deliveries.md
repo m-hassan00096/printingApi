@@ -92,20 +92,133 @@
 - The "received at handover" amount is NOT every collection for the order and is NOT the customer's balance.
 - Do not auto-count reversed collections as money still held by the business.
 
-## 5. Suggested API contracts — same global API envelope
+## 5. Detailed API Contracts (v1 — for review before implementation)
 
-All endpoints use `auth:sanctum` and explicit Spatie permissions. GET: `{"success":true,"message":"","data":{...}}`. Writes: localized `message`; write `data` should be `null` where the frontend can refetch, unless a newly created delivery ID is needed immediately (here v1 uses `data:null` and refreshes). Validation 422, business conflict 409, unauthorized 403, absent resource 404. CamelCase keys, IDs integers, money strings.
+This is the **canonical public HTTP contract** for the 6 Deliveries endpoints. Examples use illustrative IDs/numbers; PHP code is **not yet implemented**. The global ApiResponse convention, Sanctum SPA authentication, Orders/Finance/Settings enums and permission system remain unchanged.
 
-| Verb | Route | Query/Request | Response `data` | Permission |
-|---|---|---|---|---|
-| GET | /api/v1/deliveries/ready | `filter[search]`, `filter[customerId]`, `page`, `perPage`, `sort` | `orders[]`, `pagination` | `deliveries.ready.view` |
-| GET | /api/v1/deliveries/ready/{order} | order ID | `order`, `customerBalance`, `canDeliver` | `deliveries.ready.view` |
-| POST | /api/v1/deliveries/orders/{order}/deliver | request below + Idempotency-Key | null, message | `deliveries.create`; **also** `finance.collections.create` when amount >0 |
-| GET | /api/v1/deliveries | `filter[search]`, `filter[dateFrom]`, `filter[dateTo]`, `filter[status]`, `page`, `perPage`, `sort` | `deliveries[]`, `pagination` | `deliveries.list` |
-| GET | /api/v1/deliveries/{delivery} | delivery ID | `delivery` (including receipt/cancellation metadata) | `deliveries.view` |
-| POST | /api/v1/deliveries/{delivery}/cancel | `reason`, conditional `fundsReturnConfirmed` + Idempotency-Key | null, message | `deliveries.cancel` **only** |
+### 5.0 Shared conventions
 
-### 5.1 Delivery POST request
+- Base: `/api/v1/deliveries`. Read requests return `{"success":true,"message":"","data":{...}}`. Successful writes return HTTP 200 with localized `message` and `data:null`. The UI refetches after a write.
+- All input/output keys are camelCase; IDs positive integers; money is an **EGP decimal string**, never a float. Dates `YYYY-MM-DD`, timestamps ISO-8601. Delivery date filters use the recorded `Africa/Cairo` **local delivery day** (not order creation date).
+- Errors: validation **422** `{"success":false,"message":"...","errors":{"field":["..."]}}`; business rule conflict **409** `{"success":false,"message":"...","errors":[]}`; forbidden **403**; nonexistent resource **404**.
+- Pagination: `page` defaults 1, `perPage` defaults 20 (range 1–100); `{"currentPage":1,"lastPage":1,"perPage":20,"total":1}`. Unknown filters/sorts/input keys are rejected with 422.
+- Search: string 1–200 characters after trim, escaped SQL LIKE wildcards; matches immutable Orders snapshots for `orderNumber`, `customerName`, `customerPhone`. Actor/user ID and balances never accepted from the client.
+- Both POST endpoints require header `Idempotency-Key` (nonblank string, max 160 bytes). The fingerprint includes operation, target order/delivery ID and canonical request body; same successful request/key/actor replays success without duplication, reuse for another request gives 409.
+- Enum values from existing modules: `OrderProductionStatus` NOT_STARTED=0, IN_PRODUCTION=1, PARTIALLY_READY=2, READY_FOR_DELIVERY=3, DELIVERED=4; `OrderItemStage` READY_FOR_DELIVERY=4; `PaymentMethod` CASH=0, BANK_TRANSFER=1, E_WALLET=2; `BalanceType` ZERO=0, DEBIT=1, CREDIT=2; `CollectionSource.DELIVERY=2` and `CollectionStatus` POSTED=1 / REVERSED=2. New `DeliveryStatus` ACTIVE=1, CANCELLED=2. Display translated `*Label` fields.
+- Customer balance means **the overall Finance ledger account** (positive/debit = customer owes money, negative/credit = customer has credit), *not* an amount allocated to this particular order. Staff need `finance.balances.view` to see it; otherwise ready-list/preview return `customerBalance:null`.
+- The frontend may request Settings bank/wallet choices from the existing `GET /api/v1/selects?selects=bankAccounts,eWallets`, respecting existing Select permissions.
+
+### 5.1 Routes, methods and permission matrix
+
+| Method | Path (after /api/v1) | Permission | Response data |
+|---|---|---|---|
+| GET | `/deliveries/ready` | `deliveries.ready.view` | `orders[]` + `pagination` |
+| GET | `/deliveries/ready/{order}` | `deliveries.ready.view` | `order`, `customerBalance`, `canDeliver`, `canCollect` |
+| POST | `/deliveries/orders/{order}/deliver` | `deliveries.create`; additionally `finance.collections.create` for positive payment | `null` |
+| GET | `/deliveries` | `deliveries.list` | `deliveries[]` + `pagination` |
+| GET | `/deliveries/{delivery}` | `deliveries.view` | `delivery` |
+| POST | `/deliveries/{delivery}/cancel` | `deliveries.cancel` only (includes linked financial reversal) | `null` |
+
+Laravel must register the static `/ready` and `/ready/{order}` routes before the dynamic `/{delivery}`. Delivery cancellation does NOT grant global access to the separate Finance reversal endpoint.
+
+### 5.2 GET /api/v1/deliveries/ready — جاهزة للتسليم
+
+Example request:
+
+```http
+GET /api/v1/deliveries/ready?filter[search]=الريادة&filter[customerId]=12&page=1&perPage=20&sort=dueDate
+```
+
+**Query:** `filter[search]` (optional string max 200), `filter[customerId]` (optional positive int), `page`, `perPage`, `sort` enum `dueDate|-dueDate|id|-id` (default `dueDate` ascending, NULL last, then ID ascending). Invalid values: 422.
+
+Scope: CONFIRMED, not deleted, undelivered, **at least one** active order item ready in stage 4. Include PARTIALLY_READY but disable its delivery button. Do not show zero-ready, Draft, Cancelled or Delivered orders.
+
+**200 example:**
+
+```json
+{
+  "success": true,
+  "message": "",
+  "data": {
+    "orders": [
+      {
+        "orderId": 125,
+        "orderNumber": "ORD-261024001",
+        "customerId": 12,
+        "customerName": "مؤسسة الريادة",
+        "customerPhone": "01234567890",
+        "dueDate": "2026-10-26",
+        "orderTotal": "9600.00",
+        "productionStatus": 3,
+        "productionStatusLabel": "جاهز للتسليم",
+        "readyItemsCount": 2,
+        "totalItemsCount": 2,
+        "isReadyForDelivery": true,
+        "canDeliver": true,
+        "customerBalance": {"amount": "6920.00", "type": 1, "typeLabel": "مدين"},
+        "items": [
+          {"id": 301, "serviceName": "كروت شخصية", "quantity": 1000, "productionStage": 4, "productionStageLabel": "جاهز للتسليم"},
+          {"id": 302, "serviceName": "استيكرات", "quantity": 500, "productionStage": 4, "productionStageLabel": "جاهز للتسليم"}
+        ]
+      }
+    ],
+    "pagination": {"currentPage": 1, "lastPage": 1, "perPage": 20, "total": 1}
+  }
+}
+```
+
+For partially-ready orders: `productionStatus:2`, `readyItemsCount < totalItemsCount` and `canDeliver:false`; cards include current stages for non-ready items. `canDeliver` also requires the logged-in user to hold `deliveries.create`. The POST action rechecks eligibility under lock. `customerBalance:null` if missing balance-view permission; batch-query balances to avoid N+1.
+
+### 5.3 GET /api/v1/deliveries/ready/{order} — preview/modal
+
+`GET /api/v1/deliveries/ready/125`
+
+**200 example:**
+
+```json
+{
+  "success": true,
+  "message": "",
+  "data": {
+    "order": {
+      "orderId": 125,
+      "orderNumber": "ORD-261024001",
+      "customerId": 12,
+      "customerName": "مؤسسة الريادة",
+      "customerPhone": "01234567890",
+      "orderTotal": "9600.00",
+      "dueDate": "2026-10-26",
+      "productionStatus": 3,
+      "productionStatusLabel": "جاهز للتسليم",
+      "readyItemsCount": 2,
+      "totalItemsCount": 2,
+      "isReadyForDelivery": true,
+      "items": [
+        {"id": 301, "serviceName": "كروت شخصية", "quantity": 1000, "productionStage": 4, "productionStageLabel": "جاهز للتسليم"},
+        {"id": 302, "serviceName": "استيكرات", "quantity": 500, "productionStage": 4, "productionStageLabel": "جاهز للتسليم"}
+      ]
+    },
+    "customerBalance": {"amount": "6920.00", "type": 1, "typeLabel": "مدين"},
+    "canDeliver": true,
+    "canCollect": true
+  }
+}
+```
+
+`canCollect` requires **both** deliveries.create and finance.collections.create; `canDeliver` requires ready state + deliveries.create. Partially-ready orders may be previewed with both ready counters and `canDeliver:false`. Draft/Cancelled/Delivered or absent order returns 404 in this ready-screen scope.
+
+The frontend defaults `collectedAmount="0.00"`. It calculates estimated after-payment balance from cents (do not use JS floats for accounting). Preview is advisory; POST recalculates balance under a customer lock. No extra preview API is necessary.
+
+### 5.4 POST /api/v1/deliveries/orders/{order}/deliver — التسليم والتحصيل
+
+**Headers:** `Idempotency-Key: <unique-request-key>`, `Content-Type: application/json`
+
+**Paid delivery example:**
+
+```http
+POST /api/v1/deliveries/orders/125/deliver
+Idempotency-Key: deliver-order-125-attempt-1
+```
 
 ```json
 {
@@ -117,54 +230,183 @@ All endpoints use `auth:sanctum` and explicit Spatie permissions. GET: `{"succes
 }
 ```
 
-Rules:
-- `receiverName` optional string, max 150; blank becomes null.
-- `collectedAmount` decimal string, 0 or positive, up to two decimal places, compatible with Finance DECIMAL(12,2). If omitted, default `"0.00"`; no numeric JSON float.
-- `paymentMethod` MUST be absent/null when amount=0; required enum 0/1/2 when amount>0. `paymentDestinationId` only for bank/wallet: required then; prohibited/null for cash/zero.
-- `confirmCreditBalance` optional boolean; when >0 collection would produce a credit balance, require it true or return business 409. No automatic overpayment cap because Finance supports credit.
-- Do NOT accept `customerId`, `orderTotal`, `deliveredBy`, `deliveredAt`, `collectionSource` or `balanceAfter` from frontend.
+**Without payment (also valid):**
 
-### 5.2 Delivery cancellation POST request
+```json
+{"receiverName": null, "collectedAmount": "0.00"}
+```
+
+**Validation rules:**
+
+| Field | Rules |
+|---|---|
+| `receiverName` | Optional, nullable, trim, string max 150; blank normalized to null |
+| `collectedAmount` | Optional decimal **string**, defaults `"0.00"`, nonnegative, max 2 fractional digits, fits DECIMAL(12,2); JSON numeric value forbidden |
+| `paymentMethod` | Required integer enum 0/1/2 when collectedAmount > 0; absent/null for zero |
+| `paymentDestinationId` | Required positive ID when paymentMethod is BANK_TRANSFER or E_WALLET; absent/null for CASH or zero. Wrong type/nonexistent -> 422; deactivated during posting -> 409 |
+| `confirmCreditBalance` | Optional boolean, defaults false. Must be true if positive payment would create/extend **credit** balance (negative signed ledger) after posting, checked while Finance customer account locked |
+| All other fields | Rejected with 422; no client-supplied actor, customer, totals, source, timestamps, orderId or collectionId |
+
+**Eligibility/business:** order is CONFIRMED, active and not delivered, contains >=1 active item, ALL active items in stage READY_FOR_DELIVERY=4, no active Delivery record. Else 409. Must have deliveries.create; if positive amount also finance.collections.create or 403.
+
+**Atomic DB effects:** optional Finance Collection source=DELIVERY (2) with one COLLECTION ledger movement and unique receipt number; create Deliveries record; set Orders `delivered_at`, `delivered_local_date` (Cairo) and `production_status=DELIVERED`. No separate order-debt posting because it was already recorded at confirmation. For `"0.00"` create no Collection and no LedgerEntry; customer balance may remain debit/credit.
+
+**200 success:**
+
+```json
+{"success":true,"message":"تم تسليم الأوردر بنجاح.","data":null}
+```
+
+Repeat same successful Idempotency-Key returns same success, with no new collection/delivery; client refetches ready/history/balance.
+
+### 5.5 GET /api/v1/deliveries — سجل التسليمات + فلتر التاريخ
+
+Example:
+
+```http
+GET /api/v1/deliveries?filter[search]=الريادة&filter[dateFrom]=2026-10-01&filter[dateTo]=2026-10-24&filter[status]=1&page=1&perPage=20&sort=-deliveredAt
+```
+
+**Query:** `filter[search]` optional max 200; `filter[dateFrom]` / `filter[dateTo]` optional dates `YYYY-MM-DD`, each usable independently; inclusive against **deliveries.delivered_local_date**; if both supplied and from > to, 422 on `filter.dateTo`; `filter[status]` optional 1=ACTIVE, 2=CANCELLED. Sort whitelist `id|-id|deliveredAt|-deliveredAt`, default `-deliveredAt` then `-id`. Page/perPage shared rules.
+
+**200 example:**
 
 ```json
 {
-  "reason": "تم التأكيد بالخطأ",
+  "success": true,
+  "message": "",
+  "data": {
+    "deliveries": [
+      {
+        "id": 88,
+        "orderId": 125,
+        "orderNumber": "ORD-261024001",
+        "customerId": 12,
+        "customerName": "مؤسسة الريادة",
+        "customerPhone": "01234567890",
+        "deliveredById": 7,
+        "deliveredByName": "مدير المطبعة",
+        "receiverName": "أحمد محمد",
+        "receivedAmount": "2000.00",
+        "effectiveReceivedAmount": "2000.00",
+        "collectionId": 502,
+        "receiptNumber": "COL-2026-00502",
+        "collectionStatus": 1,
+        "status": 1,
+        "statusLabel": "تم التسليم",
+        "deliveredAt": "2026-10-24T15:30:00+03:00",
+        "deliveredLocalDate": "2026-10-24",
+        "cancelledAt": null,
+        "cancelledByName": null,
+        "cancellationReason": null
+      }
+    ],
+    "pagination": {"currentPage": 1, "lastPage": 1, "perPage": 20, "total": 1}
+  }
+}
+```
+
+`receivedAmount` is historical collection amount **only at that handover**, `"0.00"` if none; `effectiveReceivedAmount` is `"0.00"` if linked collection was REVERSED, otherwise the original value. Optional receipt IDs/details require `finance.collections.view`; when permission missing, receipt fields are null, but handover amount/status still visible. A cancelled handover remains in history using its **original delivery date**, with status 2 and cancellation metadata. Re-deliveries of same order appear as separate entries, not merged.
+
+### 5.6 GET /api/v1/deliveries/{delivery} — details
+
+Example `GET /api/v1/deliveries/88`.
+
+**200 example:**
+
+```json
+{
+  "success": true,
+  "message": "",
+  "data": {
+    "delivery": {
+      "id": 88,
+      "orderId": 125,
+      "orderNumber": "ORD-261024001",
+      "customerId": 12,
+      "customerName": "مؤسسة الريادة",
+      "customerPhone": "01234567890",
+      "orderTotal": "9600.00",
+      "deliveredById": 7,
+      "deliveredByName": "مدير المطبعة",
+      "receiverName": "أحمد محمد",
+      "status": 1,
+      "statusLabel": "تم التسليم",
+      "deliveredAt": "2026-10-24T15:30:00+03:00",
+      "deliveredLocalDate": "2026-10-24",
+      "receivedAmount": "2000.00",
+      "effectiveReceivedAmount": "2000.00",
+      "collection": {
+        "id": 502,
+        "receiptNumber": "COL-2026-00502",
+        "source": 2,
+        "sourceLabel": "تحصيل وقت التسليم",
+        "status": 1,
+        "statusLabel": "مرحّل",
+        "amount": "2000.00",
+        "paymentMethod": 1,
+        "paymentMethodLabel": "تحويل بنكي",
+        "paymentDestinationId": 3,
+        "destinationLabel": "الحساب الرئيسي"
+      },
+      "cancelledById": null,
+      "cancelledByName": null,
+      "cancelledAt": null,
+      "cancellationReason": null,
+      "canCancel": true
+    }
+  }
+}
+```
+
+`canCancel` requires active delivery and `deliveries.cancel`; POST always rechecks. For zero payment: `collection:null` and amounts `"0.00"`. For a cancelled delivery: original collection stays as historical metadata, status REVERSED when reversed by cancellation, original `receivedAmount` stays and `effectiveReceivedAmount` becomes `"0.00"`. Detailed `collection` is only visible to users with `finance.collections.view`, otherwise null. No exposure of wallet secrets or internal ledger rows.
+
+### 5.7 POST /api/v1/deliveries/{delivery}/cancel — إلغاء التسليم وعكس التحصيل
+
+**Headers:** `Idempotency-Key: <unique-request-key>`, `Content-Type: application/json`.
+
+```http
+POST /api/v1/deliveries/88/cancel
+Idempotency-Key: cancel-delivery-88-attempt-1
+```
+
+```json
+{
+  "reason": "تم تسجيل التسليم بالخطأ",
   "fundsReturnConfirmed": true
 }
 ```
 
-- `reason` required, trim, length 3..3000, not empty.
-- `fundsReturnConfirmed` must be true when the linked collection remains POSTED; not required when no linked collection or it is already REVERSED.
-- The confirmation flag acknowledges **external physical funds reconciliation**; software neither triggers a payout nor relies on the flag as proof of bank transfer. Employees must settle the real cash/bank/wallet balance appropriately.
-- Reversal must affect **only** `deliveries.collection_id` and use the same cancellation reason and authenticated actor in Finance audit.
+**Validation:** `reason` required trimmed string length 3..3000; `fundsReturnConfirmed` optional boolean. For a linked **POSTED** collection, must be true (otherwise 409); for zero-payment delivery or already-REVERSED receipt, not required. **The flag acknowledges manual cash/bank/wallet settlement; software does not transfer funds.**
 
-### 5.3 Example GET delivery history record
+**Authorization:** `deliveries.cancel` **alone** permits this **specific linked** Finance reversal in the same action; it does not grant generic Finance reverse permission. Never accept arbitrary collectionId in request body.
+
+**Atomic DB effects:** lock and verify current ACTIVE delivery and its delivered Order; check exact linked collection belongs to same order/customer with source=DELIVERY. If POSTED, reverse through Finance-owned service exactly once; if already REVERSED, skip reversal. Preserve immutable original delivery/receipt history, set delivery status CANCELLED=2 and store actor/reason/cancelledAt; clear Orders current `delivered_at` / `delivered_local_date`, restore `production_status=READY_FOR_DELIVERY`. Item stages remain 4, allowing later physical delivery with a new Delivery row.
+
+**200 success:**
 
 ```json
-{
-  "id": 31,
-  "orderId": 1026,
-  "orderNumber": "ORD-1026",
-  "customerName": "مؤسسة الريادة",
-  "customerPhone": "01234567890",
-  "deliveredById": 7,
-  "deliveredByName": "مدير المطبعة",
-  "receiverName": null,
-  "receivedAmount": "2000.00",
-  "effectiveReceivedAmount": "0.00",
-  "collectionId": 47,
-  "receiptNumber": "COL-2026-00047",
-  "collectionStatus": 2,
-  "status": 2,
-  "statusLabel": "ملغي",
-  "deliveredAt": "2026-10-24T15:30:00+03:00",
-  "cancelledAt": "2026-10-24T16:00:00+03:00",
-  "cancelledByName": "المدير",
-  "cancellationReason": "تم التأكيد بالخطأ"
-}
+{"success":true,"message":"تم إلغاء التسليم وعكس التحصيل المرتبط به إن وجد.","data":null}
 ```
 
-*Illustrative values only; real order number and timestamps come from persisted data and Orders' actual number format.*
+Same successful key replay: 200 with no second reversal. New key after cancelled: 409. Unknown delivery ID: 404. If reversal fails, the entire DB transaction fails, with no cancelled delivery and no changed order state.
+
+### 5.8 Key error and concurrency cases
+
+| Case | HTTP | Frontend / backend consequence |
+|---|---|---|
+| Missing/malformed Idempotency-Key; invalid date range, amount, enum, reason | 422 | Inline validation errors; no write |
+| Bank/wallet destination ID missing or wrong type | 422 | Required select error |
+| Order partly ready, no items, cancelled, or already delivered | 409 | No delivery; refresh card |
+| Payment destination no longer active at posting | 409 | Refresh destination select |
+| Positive collection creates customer credit without `confirmCreditBalance:true` | 409 | Ask for credit confirmation, then submit with a **new key** |
+| Cancellation with posted receipt but `fundsReturnConfirmed` not true | 409 | Warn about funds settlement; retry with **new key** |
+| Same Idempotency-Key used twice for same successful payload | 200 | No duplicate Delivery / receipt / reversal |
+| Same key reused with different request/target | 409 | Reused key rejected |
+| Insufficient deliveries permission / positive payment without finance.collections.create | 403 | No write |
+| Unknown order/delivery | 404 | Not found |
+
+Lock ordering: Orders adapter locks the order and checks all active item stages using **current locking reads**; Finance adapter locks customer/linked collection and writes ledger; Deliveries records status and idempotency in the shared outer DB transaction. Test with independent MySQL connections against concurrent deliver/deliver, deliver/Production undo, and deliver/cancel. Do **not** open separate HTTP requests to Finance. Idempotent replays must not fail solely because a previously used bank account became inactive after the original success.
 
 ## 6. Transaction boundaries and module contracts
 
