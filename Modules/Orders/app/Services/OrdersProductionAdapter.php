@@ -119,7 +119,9 @@ class OrdersProductionAdapter implements ProductionOrderGateway
         }
 
         foreach ($orders as $order) {
-            $statuses = $order->items()->pluck('production_stage')->map(fn ($s) => (int) $s);
+            $statuses = $order->items()->pluck('production_stage')->map(
+                fn ($s): int => $s instanceof OrderItemStage ? $s->value : (int) $s,
+            );
             if ($statuses->isEmpty()) {
                 throw new ProductionException('item_unavailable');
             }
