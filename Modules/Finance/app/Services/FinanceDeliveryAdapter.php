@@ -36,7 +36,7 @@ class FinanceDeliveryAdapter implements DeliveryFinanceGateway
     {
         $cents = Money::positive($amount);
         $this->ledger->lockCustomer($customerId);
-        $oldBalance = $this->ledger->cents($customerId);
+        $oldBalance = $this->ledger->centsForPosting($customerId);
         if ($oldBalance - $cents < 0 && ! $confirmCredit)
             throw new DeliveryException('credit_confirmation_required');
         $collection = $this->collections->post([

@@ -39,14 +39,16 @@ class DeliveryWorkflowService
                     $payload['collectedAmount'], (int) $payload['paymentMethod'],
                     $payload['paymentDestinationId'], $actorId, (bool) $payload['confirmCreditBalance']);
             }
-            $time = CarbonImmutable::now('Africa/Cairo');
+            // Store the real instant in UTC (Laravel/database timezone); derive the Cairo date separately.
+            $time = CarbonImmutable::now('UTC');
+            $localDate = $time->setTimezone('Africa/Cairo')->toDateString();
             $delivery = Delivery::query()->create([
                 'order_id' => $orderId, 'collection_id' => $collectionId,
                 'receiver_name' => $payload['receiverName'], 'delivered_by' => $actorId,
                 'delivered_by_name_snapshot' => $actorName, 'delivered_at' => $time,
-                'delivered_local_date' => $time->toDateString(), 'status' => DeliveryStatus::ACTIVE->value,
+                'delivered_local_date' => $localDate, 'status' => DeliveryStatus::ACTIVE->value,
             ]);
-            $this->orders->markDelivered($orderId, $time, $time->toDateString());
+            $this->orders->markDelivered($orderId, $time, $localDate);
             $this->keys->finish($claim, $delivery->id);
         }, 3);
     }

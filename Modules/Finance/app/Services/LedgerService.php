@@ -27,6 +27,22 @@ class LedgerService
         return Money::cents((string) $value);
     }
 
+    /**
+     * Current-read balance for mutation after the customer row has been locked.
+     * A consistent-read snapshot may have started earlier in the outer transaction
+     * (e.g. looking up an existing delivery). SELECT ... FOR UPDATE reads the latest
+     * committed ledger movements under MySQL REPEATABLE READ instead.
+     */
+    public function centsForPosting(int $customerId): int
+    {
+        $cents = 0;
+        foreach (DB::table('finance_ledger_entries')->where('customer_id', $customerId)
+            ->orderBy('id')->lockForUpdate()->pluck('signed_amount') as $amount) {
+            $cents += Money::cents((string) $amount);
+        }
+        return $cents;
+    }
+
     public function balance(int $customerId): array
     {
         $cents = $this->cents($customerId);

@@ -312,4 +312,58 @@ class DeliveriesApiTest extends OrdersTestCase
             ->assertJsonPath('data.customerBalance', null);
     }
 
+    public function test_delivery_timestamp_is_persisted_in_utc_and_local_day_matches_cairo(): void
+    {
+        $o = $this->ready();
+        // Midnight in Cairo on 25 October is still the preceding UTC day.
+        $instant = \Carbon\CarbonImmutable::parse('2026-10-25 00:30:00', 'Africa/Cairo');
+        \Carbon\CarbonImmutable::setTestNow($instant);
+        try {
+            $this->deliver($o, [], 'cairo-midnight')->assertOk();
+        } finally {
+            \Carbon\CarbonImmutable::setTestNow();
+        }
+        $delivery = Delivery::query()->firstOrFail();
+        $this->assertSame('2026-10-24 21:30:00', \Illuminate\Support\Facades\DB::table('deliveries')
+            ->where('id', $delivery->id)->value('delivered_at'));
+        $this->assertSame('2026-10-25', $delivery->delivered_local_date->format('Y-m-d'));
+        $this->assertSame('2026-10-25', $o->fresh()->delivered_local_date->format('Y-m-d'));
+        $this->getJson('/api/v1/deliveries/'.$delivery->id)->assertOk()
+            ->assertJsonPath('data.delivery.deliveredLocalDate', '2026-10-25')
+            ->assertJsonPath('data.delivery.deliveredAt', '2026-10-25T00:30:00+03:00');
+    }
+
+    public function test_financial_balance_check_uses_current_locking_read_on_mysql(): void
+    {
+        $o = $this->ready();
+        $sql = [];
+        \Illuminate\Support\Facades\DB::listen(static function (\Illuminate\Database\Events\QueryExecuted $q) use (&$sql): void {
+            $sql[] = strtolower($q->sql);
+        });
+        $this->deliver($o, ['collectedAmount' => '50.00', 'paymentMethod' => 0], 'locking-balance')->assertOk();
+        if (\Illuminate\Support\Facades\DB::getDriverName() === 'mysql') {
+            $this->assertTrue(collect($sql)->contains(static fn (string $query): bool =>
+                str_contains($query, 'finance_ledger_entries') &&
+                str_contains($query, 'signed_amount') &&
+                str_contains($query, 'for update')
+            ), 'The ledger must be read with a current locking read after the customer lock.');
+        }
+    }
+
+    public function test_failed_collection_rolls_back_delivery_and_order_state(): void
+    {
+        $bank = \Modules\Settings\Models\BankAccount::query()->create([
+            'bank_name' => 'Disabled Bank', 'account_number' => '12345555', 'is_default' => false,
+            'status' => \Modules\Settings\Enums\PaymentDestinationStatus::INACTIVE,
+        ]);
+        $o = $this->ready();
+        $this->deliver($o, ['collectedAmount' => '25.00', 'paymentMethod' => 1,
+            'paymentDestinationId' => $bank->id], 'rollback-bank')->assertStatus(409);
+        $this->assertDatabaseCount('deliveries', 0);
+        $this->assertDatabaseCount('finance_collections', 0);
+        $this->assertDatabaseCount('finance_ledger_entries', 1); // only order liability
+        $this->assertSame(OrderProductionStatus::READY_FOR_DELIVERY, $o->fresh()->production_status);
+        $this->assertNull($o->fresh()->delivered_at);
+    }
+
 }
