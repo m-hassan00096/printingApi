@@ -1,0 +1,10 @@
+{
+  "name": "tabaa/finance",
+  "type": "laravel-module",
+  "autoload": {
+    "psr-4": {
+      "Modules\\Finance\\": "app/",
+      "Modules\\Finance\\Database\\Seeders\\": "database/seeders/"
+    }
+  }
+}
