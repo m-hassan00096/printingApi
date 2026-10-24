@@ -13,14 +13,13 @@ use Modules\Orders\Exceptions\OrdersBusinessException;
 use Modules\Orders\Models\Order;
 use Modules\Orders\Services\OrderFinanceGateway;
 use Modules\Orders\Services\OrderConfirmationService;
-use Modules\Orders\Services\OrderIdempotencyKey;
 
 class OrderFinanceController extends Controller
 {
     public function confirm(ConfirmOrderRequest $request, Order $order, OrderConfirmationService $confirmation): JsonResponse
     {
         $data = $request->validated();
-        $key = OrderIdempotencyKey::required($request);
+        $key = $request->idempotencyKey();
         $confirmation->confirm($order, $key, $data['depositAmount'] ?? null,
             $data['paymentMethod'] ?? null, $data['paymentDestinationId'] ?? null);
 
@@ -30,7 +29,7 @@ class OrderFinanceController extends Controller
     public function cancel(CancelOrderRequest $request, Order $order, OrderFinanceGateway $finance): JsonResponse
     {
         $data = $request->validated();
-        $key = OrderIdempotencyKey::required($request);
+        $key = $request->idempotencyKey();
         DB::transaction(function () use ($request, $order, $finance, $key, $data): void {
             $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
             if ($locked->status !== OrderStatus::CONFIRMED || $locked->delivered_at !== null) {

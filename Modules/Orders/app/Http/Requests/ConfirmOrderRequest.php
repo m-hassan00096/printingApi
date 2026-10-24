@@ -2,11 +2,12 @@
 namespace Modules\Orders\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Modules\Orders\Http\Requests\Concerns\ValidatesIdempotencyHeader;
 use Modules\Orders\Http\Requests\Concerns\ValidatesOrderDeposit;
 
 class ConfirmOrderRequest extends FormRequest
 {
-    use ValidatesOrderDeposit;
+    use ValidatesOrderDeposit, ValidatesIdempotencyHeader;
 
     public function authorize(): bool { return true; }
 
@@ -17,6 +18,6 @@ class ConfirmOrderRequest extends FormRequest
 
     public function after(): array
     {
-        return $this->depositValidationCallbacks();
+        return [...$this->depositValidationCallbacks(), ...$this->idempotencyValidationCallbacks(true)];
     }
 }

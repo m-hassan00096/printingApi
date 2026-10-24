@@ -13,7 +13,6 @@ use Modules\Orders\Http\Resources\OrderResource;
 use Modules\Orders\Enums\OrderStatus;
 use Modules\Orders\Models\Order;
 use Modules\Orders\Services\DraftOrderService;
-use Modules\Orders\Services\OrderIdempotencyKey;
 use Modules\Orders\Services\OrderLifecycleService;
 use Modules\Orders\Services\OrderQueryService;
 
@@ -37,7 +36,7 @@ class OrderController extends Controller
     {
         $data = $request->validated();
         $this->authorizeConfirmationWhenRequested($request, $data);
-        $key = OrderIdempotencyKey::required($request);
+        $key = $request->idempotencyKey();
         $order = $orders->create($data, $key);
 
         return ApiResponse::success(
@@ -53,7 +52,7 @@ class OrderController extends Controller
         $data = $request->validated();
         $this->authorizeConfirmationWhenRequested($request, $data);
         $key = (int) ($data['status'] ?? OrderStatus::DRAFT->value) === OrderStatus::CONFIRMED->value
-            ? OrderIdempotencyKey::required($request)
+            ? $request->idempotencyKey()
             : null;
         $updated = $orders->update($order, $data, $key);
 

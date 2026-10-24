@@ -3,6 +3,7 @@ namespace Modules\Orders\Http\Requests;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Http\FormRequest;
+use Modules\Orders\Http\Requests\Concerns\ValidatesIdempotencyHeader;
 use Illuminate\Validation\Rule;
 use Modules\Orders\Enums\OrderSource;
 use Modules\Orders\Enums\OrderStatus;
@@ -11,7 +12,7 @@ use Modules\Orders\Http\Requests\Concerns\ValidatesOrderDeposit;
 
 class UpdateOrderRequest extends FormRequest
 {
-    use RejectsUnknownFields, ValidatesOrderDeposit;
+    use RejectsUnknownFields, ValidatesOrderDeposit, ValidatesIdempotencyHeader;
 
     public function authorize(): bool { return true; }
 
@@ -33,7 +34,8 @@ class UpdateOrderRequest extends FormRequest
     }
     public function after(): array
     {
-        return $this->depositValidationCallbacks();
+        return [...$this->depositValidationCallbacks(),
+            ...$this->idempotencyValidationCallbacks((int) $this->input('status', 0) === 1)];
     }
 
 }
