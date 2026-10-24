@@ -35,7 +35,7 @@ class RefundService
             $destination = $this->payments->resolve((int) $data['paymentMethod'], $data['paymentDestinationId'] ?? null);
             $display = $this->customers->display($customerId);
             $refund = Refund::query()->create([
-                'refund_number' => 'pending-'.Str::uuid(),
+                'refund_number' => 'p-'.Str::uuid(),
                 'customer_id' => $customerId,
                 'customer_name_snapshot' => $display['name'], 'customer_phone_snapshot' => $display['phone'],
                 'amount' => Money::format($amount), 'payment_method' => (int) $data['paymentMethod'],

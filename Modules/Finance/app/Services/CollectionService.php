@@ -58,7 +58,7 @@ class CollectionService
         $destination = $this->payments->resolve((int) $data['paymentMethod'], $data['paymentDestinationId'] ?? null);
         $display = $this->customers->display($customerId);
         $collection = Collection::query()->create([
-            'receipt_number' => 'pending-'.Str::uuid(),
+            'receipt_number' => 'p-'.Str::uuid(),
             'customer_id' => $customerId, 'order_id' => $data['orderId'] ?? null,
             'customer_name_snapshot' => $display['name'], 'customer_phone_snapshot' => $display['phone'],
             'source' => $source->value, 'amount' => Money::format($amount),
