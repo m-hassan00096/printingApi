@@ -119,7 +119,12 @@ class OrdersProductionAdapter implements ProductionOrderGateway
         }
 
         foreach ($orders as $order) {
-            $statuses = $order->items()->pluck('production_stage')->map(
+            // MySQL REPEATABLE READ: the earlier plain item->order_id lookup may have
+            // opened a stale consistent-read snapshot BEFORE waiting on this order's lock.
+            // A locking read below always sees the latest committed sibling item stages.
+            // Lock all siblings in PK order while holding the order lock.
+            $statuses = $order->items()->orderBy('id')->lockForUpdate()
+                ->pluck('production_stage')->map(
                 fn ($s): int => $s instanceof OrderItemStage ? $s->value : (int) $s,
             );
             if ($statuses->isEmpty()) {
