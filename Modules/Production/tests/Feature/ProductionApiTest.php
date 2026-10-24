@@ -386,4 +386,30 @@ class ProductionApiTest extends OrdersTestCase
         ])->assertUnprocessable()->assertJsonValidationErrors('printingLocationId');
     }
 
+    public function test_mysql_rollup_uses_a_locking_current_read_for_all_sibling_items(): void
+    {
+        $order = $this->confirmed(['items' => [
+            ['serviceId' => $this->service->id, 'quantity' => 100, 'agreedTotal' => '100.00'],
+            ['serviceId' => $this->secondService->id, 'quantity' => 100, 'agreedTotal' => '100.00'],
+        ]]);
+        $queries = [];
+        \Illuminate\Support\Facades\DB::listen(static function (\Illuminate\Database\Events\QueryExecuted $query) use (&$queries): void {
+            $queries[] = strtolower($query->sql);
+        });
+
+        $this->action($this->item($order), 'start-design')->assertOk();
+        $this->assertSame(OrderProductionStatus::IN_PRODUCTION, $order->fresh()->production_status);
+
+        if (\Illuminate\Support\Facades\DB::getDriverName() === 'mysql') {
+            $this->assertTrue(
+                collect($queries)->contains(static fn (string $sql): bool =>
+                    str_contains($sql, 'order_items')
+                    && str_contains($sql, 'production_stage')
+                    && str_contains($sql, 'for update')
+                ),
+                'Order production status must be rolled up via SELECT ... FOR UPDATE under MySQL REPEATABLE READ.',
+            );
+        }
+    }
+
 }
