@@ -2,7 +2,7 @@
 
 Date: 2026-10-24
 Branch: feature/production
-Status: Planning draft for API agreement. No Production functionality has yet been implemented.
+Status: Static Production v1 implemented on feature/production; API contracts below remain the source of truth for review prior to PR. Future dynamic workflows remain deferred.
 
 
 ## Implementation choice (2026-10-24): STATIC production workflow
@@ -162,9 +162,33 @@ These permissions govern actions. "My design work" reads authenticated user ID, 
 
 ## 9. Implementation order
 
-1. Review and approve this document's API contract and stage/permission rules.
-2. Create the Production Module skeleton, migrations for history/idempotency, enums/resources/requests.
-3. Add Orders and Settings contracts/adapters, action services and 11 endpoints.
-4. Tests on SQLite and MySQL, edge-case review, Pull Request into develop.
+1. Production module skeleton, migrations, enum/resources/requests: implemented.
+2. Orders-owned gateway and Settings printing-location contract: implemented.
+3. Static stage Actions/Services and 11 endpoints: implemented.
+4. SQLite full regression and MySQL 8 production suite: automated in `.github/workflows/production-ci.yml`; keep green before proposing PR.
+5. Code review and user review; only then Pull Request to `develop`. No merge during implementation.
 
 Note: older Orders spec said only the *starter* or admin may finish design. The newly approved requirement captures a separate finisher and permits another properly authorized employee to finish. The later approved rule supersedes that ownership restriction.
+
+## 10. Implemented files / running locally
+
+- `Modules/Production/app/Services/ProductionWorkflowService.php`: Idempotent, transactional action orchestration and immutable audit events.
+- `Modules/Orders/app/Services/OrdersProductionAdapter.php`: all item transitions and order status rollup. Orders remains the sole writer of its stage/status columns.
+- `Modules/Settings/app/Services/PrintingLocationResolver.php`: validates active printing locations and locks selected location during handoff.
+- `Modules/Production/app/Services/ProductionQueryService.php`: board filters, current-user design history filters, summary, event listing.
+- `Modules/Production/app/Http/Controllers/ProductionItemController.php` and `Modules/Production/routes/api.php`: 11 endpoints, camelCase fields, integer enums, `data:null` on successful writes.
+- `Modules/Production/tests/Feature/ProductionApiTest.php`: static flow, batch atomicity, location reassignment, undo, user-specific work filters, authorization and idempotency.
+
+Run after pulling the branch:
+
+```bash
+composer dump-autoload
+php artisan migrate
+php artisan module:seed Production
+php artisan optimize:clear
+php artisan test
+```
+
+**Migration caution:** never use `migrate:fresh` on a populated environment.
+
+**Known intentional scope boundary:** physical delivery is owned by a future Deliveries module and is not implemented here. Undo after actual delivery is blocked by the Orders-owned gateway.
