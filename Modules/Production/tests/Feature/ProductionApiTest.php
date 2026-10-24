@@ -280,4 +280,78 @@ class ProductionApiTest extends OrdersTestCase
         $this->action($id, 'start-design')->assertForbidden();
         $this->getJson('/api/v1/production/items')->assertForbidden();
     }
+    public function test_another_authorized_employee_can_complete_design_and_both_actors_are_audited(): void
+    {
+        $order = $this->confirmed();
+        $id = $this->item($order);
+        $this->action($id, 'start-design')->assertOk();
+
+        $staff = User::create(['name' => 'Design Finisher', 'username' => 'design_finisher',
+            'password' => 'password123', 'status' => UserStatus::ACTIVE]);
+        $staff->assignRole($this->staffRole);
+        $this->staffRole->givePermissionTo(Permission::findOrCreate('production.design.complete', 'web'));
+        $this->staffRole->givePermissionTo(Permission::findOrCreate('production.items.list', 'web'));
+        $this->staffRole->givePermissionTo(Permission::findOrCreate('production.history.view', 'web'));
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->login($staff);
+        $this->action($id, 'complete-design')->assertOk();
+        $this->getJson('/api/v1/production/items?filter[myDesignWork]=1')
+            ->assertJsonPath('data.pagination.total', 0);
+        $this->getJson('/api/v1/production/items?filter[myDesignWork]=2')
+            ->assertJsonPath('data.pagination.total', 1);
+        $this->getJson("/api/v1/production/items/$id/history")
+            ->assertJsonPath('data.events.0.actorId', $staff->id)
+            ->assertJsonPath('data.events.1.actorId', $this->admin->id);
+        $this->assertDatabaseHas('order_items', ['id' => $id,
+            'production_stage' => 2, 'designer_id' => $this->admin->id]);
+    }
+
+    public function test_combined_action_requires_both_permissions(): void
+    {
+        $order = $this->confirmed();
+        $id = $this->item($order);
+        $this->action($id, 'start-design')->assertOk();
+
+        $staff = User::create(['name' => 'Completer Only', 'username' => 'completer_only',
+            'password' => 'password123', 'status' => UserStatus::ACTIVE]);
+        $staff->assignRole($this->staffRole);
+        $this->staffRole->givePermissionTo(Permission::findOrCreate('production.design.complete', 'web'));
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->login($staff);
+
+        $this->action($id, 'complete-and-send-to-printing', [
+            'printingLocationId' => $this->printer->id,
+        ])->assertForbidden();
+        $this->action($id, 'complete-design')->assertOk();
+        $this->assertDatabaseHas('order_items', ['id' => $id, 'production_stage' => 2]);
+    }
+
+    public function test_idempotency_key_reuse_with_different_item_is_rejected(): void
+    {
+        $order = $this->confirmed(['items' => [
+            ['serviceId' => $this->service->id, 'quantity' => 100, 'agreedTotal' => '120.00'],
+            ['serviceId' => $this->secondService->id, 'quantity' => 100, 'agreedTotal' => '140.00'],
+        ]]);
+        [$a, $b] = $order->items()->orderBy('id')->pluck('id')->all();
+        $this->withHeader('Idempotency-Key', 'reuse-key')
+            ->postJson("/api/v1/production/items/$a/start-design", [])->assertOk();
+        $this->postJson("/api/v1/production/items/$b/start-design", [])->assertStatus(409);
+        $this->assertDatabaseHas('order_items', ['id' => $a, 'production_stage' => 1]);
+        $this->assertDatabaseHas('order_items', ['id' => $b, 'production_stage' => 0]);
+    }
+
+    public function test_customer_and_search_filters_limit_board_results(): void
+    {
+        $first = $this->confirmed();
+        $second = $this->confirmed(['customerId' => $this->secondCustomer->id]);
+        $this->getJson('/api/v1/production/items?filter[customerId]='.$this->customer->id)
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.orderId', $first->id);
+        $this->getJson('/api/v1/production/items?filter[search]=Mona')
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.orderId', $second->id);
+        $this->getJson('/api/v1/production/summary?filter[customerId]='.$this->secondCustomer->id)
+            ->assertJsonPath('data.notStartedCount', 1);
+    }
+
 }
