@@ -49,7 +49,7 @@ class FinanceApiTest extends OrdersTestCase
         $payload = ['customerId' => $this->customer->id, 'amount' => '4000.00', 'paymentMethod' => 0];
         $this->withHeader('Idempotency-Key', 'collect-a')
             ->postJson('/api/v1/finance/collections', $payload)
-            ->assertCreated()->assertJsonPath('data.id', 1);
+            ->assertCreated()->assertJsonStructure(['data' => ['id', 'receiptNumber']]);
 
         $this->postJson('/api/v1/finance/collections', $payload)->assertCreated();
         $this->assertDatabaseCount('finance_collections', 1);
@@ -62,18 +62,19 @@ class FinanceApiTest extends OrdersTestCase
 
     public function test_reversing_collection_restores_debt_and_cannot_be_reversed_twice(): void
     {
-        $this->withHeader('Idempotency-Key', 'collection-1')
+        $created = $this->withHeader('Idempotency-Key', 'collection-1')
             ->postJson('/api/v1/finance/collections', [
                 'customerId' => $this->customer->id, 'amount' => '200.00', 'paymentMethod' => 0,
             ])->assertCreated();
+        $collectionId = $created->json('data.id');
         $this->withHeader('Idempotency-Key', 'reverse-1')
-            ->postJson('/api/v1/finance/collections/1/reverse', ['reason' => 'Incorrect entry'])
+            ->postJson('/api/v1/finance/collections/'.$collectionId.'/reverse', ['reason' => 'Incorrect entry'])
             ->assertOk()->assertJsonPath('data', null);
         $this->getJson('/api/v1/finance/customers/'.$this->customer->id.'/balance')
             ->assertJsonPath('data.type', 0)->assertJsonPath('data.amount', '0.00');
         $this->assertDatabaseCount('finance_ledger_entries', 2);
         $this->withHeader('Idempotency-Key', 'reverse-2')
-            ->postJson('/api/v1/finance/collections/1/reverse', ['reason' => 'Another attempt'])
+            ->postJson('/api/v1/finance/collections/'.$collectionId.'/reverse', ['reason' => 'Another attempt'])
             ->assertStatus(409);
     }
 
