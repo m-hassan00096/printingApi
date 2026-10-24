@@ -366,4 +366,31 @@ class DeliveriesApiTest extends OrdersTestCase
         $this->assertNull($o->fresh()->delivered_at);
     }
 
+    public function test_unknown_order_deliver_returns_not_found_without_side_effects(): void
+    {
+        $this->withHeader('Idempotency-Key', 'unknown-order-deliver')
+            ->postJson('/api/v1/deliveries/orders/987654321/deliver', [])
+            ->assertNotFound();
+        $this->assertDatabaseCount('deliveries', 0);
+        $this->assertDatabaseCount('finance_collections', 0);
+    }
+
+    public function test_delivery_date_filter_uses_indexable_date_column_comparison(): void
+    {
+        $o = $this->ready();
+        $this->deliver($o)->assertOk();
+        $statements = [];
+        \Illuminate\Support\Facades\DB::listen(static function (\Illuminate\Database\Events\QueryExecuted $q) use (&$statements): void {
+            $statements[] = strtolower($q->sql);
+        });
+        $today = now('Africa/Cairo')->toDateString();
+        $this->getJson('/api/v1/deliveries?filter[dateFrom]='.$today.'&filter[dateTo]='.$today)
+            ->assertOk()->assertJsonPath('data.pagination.total', 1);
+        $filtered = collect($statements)->filter(static fn (string $q): bool =>
+            str_contains($q, 'deliveries') && str_contains($q, 'delivered_local_date'));
+        $this->assertTrue($filtered->isNotEmpty());
+        $this->assertFalse($filtered->contains(static fn (string $q): bool =>
+            str_contains($q, 'date(')), 'Date-column filters should not wrap an indexed DATE with DATE().');
+    }
+
 }

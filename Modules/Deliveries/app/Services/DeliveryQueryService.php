@@ -41,8 +41,8 @@ class DeliveryQueryService
     {
         $q = Delivery::query();
         if (isset($filters['status'])) $q->where('status', $filters['status']);
-        if (isset($filters['dateFrom'])) $q->whereDate('delivered_local_date', '>=', $filters['dateFrom']);
-        if (isset($filters['dateTo'])) $q->whereDate('delivered_local_date', '<=', $filters['dateTo']);
+        if (isset($filters['dateFrom'])) $q->where('delivered_local_date', '>=', $filters['dateFrom']);
+        if (isset($filters['dateTo'])) $q->where('delivered_local_date', '<=', $filters['dateTo']);
         if (! empty($filters['search'])) {
             $s = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $filters['search']);
             $like = '%'.$s.'%';

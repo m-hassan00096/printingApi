@@ -81,7 +81,7 @@ class OrdersDeliveryAdapter implements DeliveryOrderGateway
     public function lockEligible(int $orderId): array
     {
         $o = Order::query()->whereKey($orderId)->lockForUpdate()->first();
-        if ($o === null) throw new DeliveryException('order_unavailable');
+        if ($o === null) abort(404);
         if ($o->status !== OrderStatus::CONFIRMED || $o->delivered_at !== null
             || $o->production_status !== OrderProductionStatus::READY_FOR_DELIVERY) {
             throw new DeliveryException('order_unavailable');
