@@ -14,7 +14,9 @@ Route::middleware('auth:sanctum')->prefix('v1/production')->group(function (): v
     Route::post('/items/{orderItem}/complete-design', [Items::class, 'completeDesign'])
         ->whereNumber('orderItem')->middleware('permission:production.design.complete');
     Route::post('/items/{orderItem}/complete-and-send-to-printing', [Items::class, 'completeAndSend'])
-        ->whereNumber('orderItem')->middleware('permission:production.design.complete,production.printing.send');
+        ->whereNumber('orderItem')->middleware([
+            'permission:production.design.complete', 'permission:production.printing.send',
+        ]);
     Route::post('/items/{orderItem}/send-to-printing', [Items::class, 'send'])
         ->whereNumber('orderItem')->middleware('permission:production.printing.send');
     Route::patch('/items/{orderItem}/printing-location', [Items::class, 'changeLocation'])
