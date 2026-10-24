@@ -4,5 +4,6 @@
     "PrintingServices": true,
     "Customers": true,
     "Orders": true,
-    "Finance": true
+    "Finance": true,
+    "Production": true
 }

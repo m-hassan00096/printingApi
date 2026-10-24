@@ -33,6 +33,10 @@
             <directory>Modules/Finance/tests</directory>
         </testsuite>
 
+        <testsuite name="Production Module">
+            <directory>Modules/Production/tests</directory>
+        </testsuite>
+
         <testsuite name="Settings Module">
             <directory>Modules/Settings/tests</directory>
         </testsuite>
