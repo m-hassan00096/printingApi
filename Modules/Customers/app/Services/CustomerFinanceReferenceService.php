@@ -1,12 +1,16 @@
 <?php
 namespace Modules\Customers\Services;
 
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Modules\Customers\Contracts\CustomerFinanceReference;
 use Modules\Customers\Models\Customer;
 
 class CustomerFinanceReferenceService implements CustomerFinanceReference
 {
+    public function exists(int $customerId): bool
+    {
+        return Customer::query()->whereKey($customerId)->exists();
+    }
+
     public function assertExistsAndLock(int $customerId): void
     {
         Customer::query()->whereKey($customerId)->lockForUpdate()->firstOrFail();

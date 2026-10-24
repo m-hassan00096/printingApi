@@ -40,9 +40,9 @@ class RefundController extends Controller
         return ApiResponse::success(data: (new RefundResource($refund))->resolve($request));
     }
 
-    public function store(StoreRefundRequest $request, RefundService $service, IdempotencyService $keys): JsonResponse
+    public function store(StoreRefundRequest $request, RefundService $service): JsonResponse
     {
-        $refund = $service->create($request->validated(), (int) $request->user()->id, $keys->key($request));
+        $refund = $service->create($request->validated(), (int) $request->user()->id, $request->idempotencyHash());
         return ApiResponse::success(
             data: ['id' => $refund->id, 'refundNumber' => $refund->refund_number],
             message: __('finance.messages.refund_created'), status: HttpStatusCode::CREATED,

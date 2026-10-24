@@ -1,22 +1,11 @@
 <?php
 namespace Modules\Finance\Services;
 
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Modules\Finance\Exceptions\FinanceException;
 
 class IdempotencyService
 {
-    public function key(Request $request): string
-    {
-        $key = $request->header('Idempotency-Key');
-        if (! is_string($key) || strlen($key) < 1 || strlen($key) > 160) {
-            throw ValidationException::withMessages(['Idempotency-Key' => __('finance.messages.idempotency_required')]);
-        }
-        return hash('sha256', $key);
-    }
-
     /** Called inside a transaction. Existing requests return their original result, not a new posting. */
     public function claim(int $actorId, string $operation, string $keyHash, array $data): object
     {

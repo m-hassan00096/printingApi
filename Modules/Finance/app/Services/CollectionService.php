@@ -52,8 +52,9 @@ class CollectionService
         $customerId = (int) $data['customerId'];
         $amount = Money::positive($data['amount']);
         $this->ledger->lockCustomer($customerId);
-        if (isset($data['orderId'])) {
-            $this->orders->assertCustomerOwnsOrder((int) $data['orderId'], $customerId);
+        if (isset($data['orderId']) && ! $this->orders->belongsToCustomer((int) $data['orderId'], $customerId)) {
+            // The reference may have become invalid after request validation.
+            throw new FinanceException('invalid_order');
         }
         $destination = $this->payments->resolve((int) $data['paymentMethod'], $data['paymentDestinationId'] ?? null);
         $display = $this->customers->display($customerId);

@@ -1,9 +1,13 @@
 <?php
 namespace Modules\Settings\Contracts;
 
-/** Stable contract: consumer supplies numeric method, implementation owns bank/wallet tables. */
+/** Settings owns destination lookup/validation; consumers never query its models directly. */
 interface PaymentDestinationLookup
 {
-    /** @return array{bankAccountId: ?int, eWalletId: ?int, label: ?string} */
-    public function resolve(int $method, ?int $destinationId): array;
+    public function available(int $method, ?int $destinationId): bool;
+
+    /** Returns null if the selected destination was disabled/deleted since HTTP validation.
+     * @return array{bankAccountId: ?int, eWalletId: ?int, label: ?string}|null
+     */
+    public function resolve(int $method, ?int $destinationId): ?array;
 }

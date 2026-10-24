@@ -12,6 +12,7 @@ use Modules\Finance\Enums\CollectionStatus;
 use Modules\Finance\Enums\PaymentMethod;
 use Modules\Finance\Http\Requests\FinanceIndexRequest;
 use Modules\Finance\Http\Requests\StoreCollectionRequest;
+use Modules\Finance\Http\Requests\ReverseCollectionRequest;
 use Modules\Finance\Http\Resources\CollectionResource;
 use Modules\Finance\Models\Collection;
 use Modules\Finance\Services\CollectionService;
@@ -54,9 +55,9 @@ class CollectionController extends Controller
         return ApiResponse::success(data: (new CollectionResource($collection))->resolve($request));
     }
 
-    public function store(StoreCollectionRequest $request, CollectionService $service, IdempotencyService $keys): JsonResponse
+    public function store(StoreCollectionRequest $request, CollectionService $service): JsonResponse
     {
-        $key = $keys->key($request);
+        $key = $request->idempotencyHash();
         $collection = $service->create($request->validated(), (int) $request->user()->id, $key);
         return ApiResponse::success(
             data: ['id' => $collection->id, 'receiptNumber' => $collection->receipt_number],
@@ -64,10 +65,10 @@ class CollectionController extends Controller
         );
     }
 
-    public function reverse(Collection $collection, Request $request, CollectionService $service, IdempotencyService $keys): JsonResponse
+    public function reverse(Collection $collection, ReverseCollectionRequest $request, CollectionService $service): JsonResponse
     {
-        $data = $request->validate(['reason' => ['required', 'string', 'min:3', 'max:3000']]);
-        $service->reverse($collection, $data['reason'], (int) $request->user()->id, $keys->key($request));
+        $data = $request->validated();
+        $service->reverse($collection, $data['reason'], (int) $request->user()->id, $request->idempotencyHash());
         return ApiResponse::success(message: __('finance.messages.collection_reversed'));
     }
 
