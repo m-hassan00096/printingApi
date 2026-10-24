@@ -47,23 +47,9 @@ class CustomerFinanceController extends Controller
         ]);
     }
 
-    public function openingBalance(int $customer, Request $request, LedgerService $ledger): JsonResponse
+    public function openingBalance(int $customer, StoreOpeningBalanceRequest $request, CreateOpeningBalanceAction $action): JsonResponse
     {
-        $data = $request->validate([
-            'amount' => ['required', 'string', 'regex:/\A(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,2})?\z/D', 'not_in:0,0.0,0.00'],
-            'type' => ['required', 'integer', 'in:1,2'],
-            'note' => ['sometimes', 'nullable', 'string', 'max:5000'],
-        ]);
-        DB::transaction(function () use ($customer, $data, $ledger): void {
-            $ledger->lockCustomer($customer);
-            if (LedgerEntry::query()->where('event_key', 'opening:'.$customer)->exists()) {
-                throw new FinanceException('opening_exists');
-            }
-            $cents = Money::positive($data['amount']);
-            $ledger->post($customer, LedgerEntryType::OPENING_BALANCE,
-                (int) $data['type'] === BalanceType::DEBIT->value ? $cents : -$cents,
-                'opening:'.$customer, note: $data['note'] ?? null);
-        }, 3);
+        $action->execute($customer, $request->validated());
         return ApiResponse::success(message: __('finance.messages.opening_created'), status: HttpStatusCode::CREATED);
     }
 
