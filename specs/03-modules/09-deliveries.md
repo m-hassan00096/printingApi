@@ -3,7 +3,7 @@
 **Date:** 2026-10-24
 **Repository:** m-hassan00096/printingApi
 **Branch:** feature/deliveries, created from develop after merged Production PR #7
-**Status:** Specification / design. **No Deliveries PHP implementation or database migration yet.**
+**Status:** v1 backend implementation committed on `feature/deliveries` (six endpoints, migration, contracts, tests). **Not merged into `develop`.**
 **Related:** 06-orders.md, 07-finance.md, 08-production.md
 
 ## 1. Agreed business scope
@@ -471,12 +471,17 @@ Lock ordering: Orders adapter locks the order and checks all active item stages 
 13. Race tests on real MySQL connections: two simultaneous deliveries of one Order; delivery vs Product undo; delivery vs cancellation; payment vs reversal; verify no double Collection/Delivery and all locks respect consistent ordering.
 14. Test full PHPUnit SQLite regression and MySQL 8 delivery suite via GitHub Actions. Confirm existing Orders/Finance/Production tests still pass.
 
-## 10. Implementation stages (do not start PHP work from this planning commit)
+## 10. Implementation status / المرحلة الحالية
 
-1. Confirm specification and lock/payment contract edge cases. Write implementation checklist against existing API standards.
-2. Generate static Deliveries module, migration, enum, seeder and translation files, Contracts/adapters in Orders and Finance, Finance permission guards.
-3. Implement ready-list/history/preview queries (pagination, date filters, non-N+1 balances), then Deliver/Cancel Actions with shared DB transactions and idempotency.
-4. Add feature tests and real MySQL concurrency scenarios, then code review.
-5. Open Pull Request `feature/deliveries -> develop` after green CI; merge only on explicit instruction.
+Backend v1 has been implemented on `feature/deliveries`, without opening a PR or merging into `develop`:
 
-**No dynamic stage management, no additional payment module, no direct Deliveries edits to Finance ledger tables.**
+- [x] Module registration and schema: `deliveries` and `delivery_idempotency_keys` with immutable cancellation history and support for re-delivery.
+- [x] Orders-owned adapter for the ready cards, item counts, current-read order/item locking, delivered status and rollback to ready.
+- [x] Finance-owned adapter for customer ledger balance (batched read), delivery collection source=2, payment destinations, and linked-collection reversal.
+- [x] Six REST endpoints with input validation, permissions, Arabic/English messages, idempotent deliver/cancel and requested delivery-date filters.
+- [x] Basic integration tests on SQLite and MySQL 8: paid and unpaid delivery, reversal, retries, credit confirmation, roles, date filters, bank/wallet and inactive/mismatched destination.
+- [x] Last CI on commit `9bf4d881dee58ba5e63d33a18db25bdd7b5f1c30`: SQLite 478 passed / 9 skipped (2,376 assertions); MySQL 8 Deliveries 15 passed (157 assertions).
+- [ ] **Before merge:** independent-connection MySQL race tests (two deliverers / Production undo / linked payment reversal), final code review and performance check with realistic order volumes. Current ordinary MySQL feature tests do not demonstrate true worker contention.
+- [ ] Open a PR `feature/deliveries -> develop` after review and merge **only on explicit instruction**.
+
+No dynamic stage management, partial physical delivery, additional payment module, or direct Deliveries writes to the Finance ledger tables.
