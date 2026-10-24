@@ -1,0 +1,249 @@
+<?php
+namespace Modules\Deliveries\Tests\Feature;
+
+require_once __DIR__.'/../../../Orders/tests/Feature/Support/OrdersTestCase.php';
+
+use Illuminate\Support\Str;
+use Modules\Deliveries\Enums\DeliveryStatus;
+use Modules\Deliveries\Models\Delivery;
+use Modules\Finance\Enums\CollectionSource;
+use Modules\Finance\Enums\CollectionStatus;
+use Modules\Finance\Models\Collection;
+use Modules\Identity\Models\Permission;
+use Modules\Orders\Enums\OrderProductionStatus;
+use Modules\Orders\Models\Order;
+use Modules\Orders\Tests\Feature\Support\OrdersTestCase;
+use Spatie\Permission\PermissionRegistrar;
+
+class DeliveriesApiTest extends OrdersTestCase
+{
+    protected function setUp(): void
+    {
+        parent::setUp();
+        foreach ([
+            'deliveries.ready.view', 'deliveries.list', 'deliveries.view',
+            'deliveries.create', 'deliveries.cancel',
+            'finance.balances.view', 'finance.collections.create', 'finance.collections.view',
+            'finance.collections.reverse',
+        ] as $perm) {
+            $this->adminRole->givePermissionTo(Permission::findOrCreate($perm, 'web'));
+        }
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+    }
+
+    private function confirmed(array $changes = []): Order
+    {
+        $o = $this->draft($changes);
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->path($o).'/confirm', [])->assertOk();
+        return $o->fresh();
+    }
+
+    private function ready(array $changes = []): Order
+    {
+        $o = $this->confirmed($changes);
+        $o->items()->update(['production_stage' => 4]);
+        $o->production_status = OrderProductionStatus::READY_FOR_DELIVERY;
+        $o->save();
+        return $o->fresh();
+    }
+
+    private function deliver(Order $order, array $body = [], string $key = 'deliver-one'): \Illuminate\Testing\TestResponse
+    {
+        return $this->withHeader('Idempotency-Key', $key)
+            ->postJson('/api/v1/deliveries/orders/'.$order->id.'/deliver', $body);
+    }
+
+    private function cancel(int $id, array $body = ['reason' => 'Delivered to wrong person'], string $key = 'cancel-one'): \Illuminate\Testing\TestResponse
+    {
+        return $this->withHeader('Idempotency-Key', $key)
+            ->postJson('/api/v1/deliveries/'.$id.'/cancel', $body);
+    }
+
+    public function test_ready_board_exposes_only_confirmed_orders_with_ready_items_and_preview(): void
+    {
+        $fully = $this->ready();
+        $partial = $this->confirmed(['items' => [
+            ['serviceId' => $this->service->id, 'quantity' => 100, 'agreedTotal' => '100.00'],
+            ['serviceId' => $this->secondService->id, 'quantity' => 100, 'agreedTotal' => '200.00'],
+        ]]);
+        $partial->items()->orderBy('id')->first()->update(['production_stage' => 4]);
+        $partial->production_status = OrderProductionStatus::PARTIALLY_READY;
+        $partial->save();
+        $unready = $this->confirmed();
+        $draft = $this->draft();
+
+        $this->getJson('/api/v1/deliveries/ready')->assertOk()
+            ->assertJsonPath('data.pagination.total', 2);
+        $this->getJson('/api/v1/deliveries/ready/'.$fully->id)->assertOk()
+            ->assertJsonPath('data.order.isReadyForDelivery', true)
+            ->assertJsonPath('data.canDeliver', true)->assertJsonPath('data.canCollect', true)
+            ->assertJsonPath('data.customerBalance.type', 1);
+        $this->getJson('/api/v1/deliveries/ready/'.$partial->id)->assertOk()
+            ->assertJsonPath('data.canDeliver', false)
+            ->assertJsonPath('data.order.readyItemsCount', 1);
+        $this->getJson('/api/v1/deliveries/ready/'.$unready->id)->assertNotFound();
+        $this->getJson('/api/v1/deliveries/ready/'.$draft->id)->assertNotFound();
+    }
+
+    public function test_zero_collection_delivery_is_atomic_idempotent_and_prevents_production_changes(): void
+    {
+        $o = $this->ready();
+        $this->deliver($o, ['receiverName' => '  Warehouse staff  ', 'collectedAmount' => '0.00'])
+            ->assertOk()->assertJsonPath('data', null);
+        $this->deliver($o, ['receiverName' => 'Warehouse staff', 'collectedAmount' => '0.00'])
+            ->assertOk();
+        $this->assertDatabaseCount('deliveries', 1);
+        $this->assertDatabaseCount('finance_collections', 0);
+        $this->assertDatabaseCount('finance_ledger_entries', 1); // confirmation liability only
+        $d = Delivery::query()->firstOrFail();
+        $this->assertSame('Warehouse staff', $d->receiver_name);
+        $this->assertNull($d->collection_id);
+        $this->assertSame(OrderProductionStatus::DELIVERED, $o->fresh()->production_status);
+        $this->assertNotNull($o->fresh()->delivered_at);
+        $this->getJson('/api/v1/deliveries/ready')->assertJsonPath('data.pagination.total', 0);
+        $this->getJson('/api/v1/deliveries/'.$d->id)->assertOk()
+            ->assertJsonPath('data.delivery.receivedAmount', '0.00');
+        $this->deliver($o, [], 'another-key')->assertStatus(409);
+    }
+
+    public function test_payment_on_delivery_creates_one_delivery_collection_and_ledger_entry(): void
+    {
+        $o = $this->ready();
+        $this->deliver($o, ['collectedAmount' => '100.00', 'paymentMethod' => 0], 'paid-one')->assertOk();
+        $this->assertDatabaseHas('finance_collections', ['order_id' => $o->id,
+            'source' => CollectionSource::DELIVERY->value, 'status' => CollectionStatus::POSTED->value,
+            'amount' => '100.00']);
+        $this->assertDatabaseCount('finance_ledger_entries', 2);
+        $d = Delivery::query()->firstOrFail();
+        $this->assertNotNull($d->collection_id);
+        $this->getJson('/api/v1/deliveries/'.$d->id)->assertOk()
+            ->assertJsonPath('data.delivery.collection.source', 2)
+            ->assertJsonPath('data.delivery.receivedAmount', '100.00')
+            ->assertJsonPath('data.delivery.effectiveReceivedAmount', '100.00');
+    }
+
+    public function test_partial_order_rejects_delivery_without_collection(): void
+    {
+        $o = $this->confirmed();
+        $this->deliver($o)->assertStatus(409);
+        $this->assertDatabaseCount('deliveries', 0);
+        $this->assertDatabaseCount('finance_collections', 0);
+        $this->assertDatabaseCount('finance_ledger_entries', 1);
+    }
+
+    public function test_credit_requires_explicit_confirmation_before_paid_delivery(): void
+    {
+        $o = $this->ready();
+        $payload = ['collectedAmount' => '351.00', 'paymentMethod' => 0];
+        $this->deliver($o, $payload, 'credit-denied')->assertStatus(409);
+        $this->assertDatabaseCount('finance_collections', 0);
+        $this->deliver($o, $payload + ['confirmCreditBalance' => true], 'credit-confirmed')->assertOk();
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id.'/balance')
+            ->assertJsonPath('data.type', 2);
+    }
+
+    public function test_paid_delivery_cancel_reverses_only_linked_collection_once(): void
+    {
+        $o = $this->ready();
+        $this->deliver($o, ['collectedAmount' => '100.00', 'paymentMethod' => 0])->assertOk();
+        $d = Delivery::query()->firstOrFail();
+        $this->cancel($d->id)->assertStatus(409);
+        $this->assertSame(DeliveryStatus::ACTIVE, $d->fresh()->status);
+        $this->cancel($d->id, ['reason' => 'Wrong recipient', 'fundsReturnConfirmed' => true])->assertOk();
+        $this->cancel($d->id, ['reason' => 'Wrong recipient', 'fundsReturnConfirmed' => true])->assertOk();
+        $this->assertSame(DeliveryStatus::CANCELLED, $d->fresh()->status);
+        $this->assertSame(OrderProductionStatus::READY_FOR_DELIVERY, $o->fresh()->production_status);
+        $this->assertNull($o->fresh()->delivered_at);
+        $this->assertSame(CollectionStatus::REVERSED, Collection::findOrFail($d->collection_id)->status);
+        $this->assertDatabaseCount('finance_ledger_entries', 3);
+        $this->getJson('/api/v1/deliveries/'.$d->id)->assertOk()
+            ->assertJsonPath('data.delivery.receivedAmount', '100.00')
+            ->assertJsonPath('data.delivery.effectiveReceivedAmount', '0.00')
+            ->assertJsonPath('data.delivery.status', 2);
+        $this->cancel($d->id, ['reason' => 'Repeated cancel', 'fundsReturnConfirmed' => true], 'new-cancel-key')->assertStatus(409);
+    }
+
+    public function test_cancel_without_payment_keeps_finance_ledger_unchanged_and_allows_redelivery(): void
+    {
+        $o = $this->ready();
+        $this->deliver($o)->assertOk();
+        $old = Delivery::query()->firstOrFail();
+        $this->cancel($old->id)->assertOk();
+        $this->assertDatabaseCount('finance_ledger_entries', 1);
+        $this->deliver($o, [], 'second-delivery')->assertOk();
+        $this->assertDatabaseCount('deliveries', 2);
+        $this->assertSame(DeliveryStatus::CANCELLED, $old->fresh()->status);
+        $this->assertSame(OrderProductionStatus::DELIVERED, $o->fresh()->production_status);
+        $this->getJson('/api/v1/deliveries')->assertJsonPath('data.pagination.total', 2);
+    }
+
+    public function test_previously_reversed_collection_is_not_reversed_again_on_cancellation(): void
+    {
+        $o = $this->ready();
+        $this->deliver($o, ['collectedAmount' => '25.00', 'paymentMethod' => 0])->assertOk();
+        $d = Delivery::query()->firstOrFail();
+        $this->withHeader('Idempotency-Key', 'finance-reverse-manual')
+            ->postJson('/api/v1/finance/collections/'.$d->collection_id.'/reverse',
+                ['reason' => 'Finance corrected payment'])->assertOk();
+        $this->cancel($d->id, ['reason' => 'Cancel after reversal'])->assertOk();
+        $this->assertDatabaseCount('finance_ledger_entries', 3);
+    }
+
+    public function test_history_filters_by_delivery_date_and_search(): void
+    {
+        $o = $this->ready();
+        $this->deliver($o)->assertOk();
+        $today = now('Africa/Cairo')->toDateString();
+        $yesterday = now('Africa/Cairo')->subDay()->toDateString();
+        $tomorrow = now('Africa/Cairo')->addDay()->toDateString();
+        $this->getJson('/api/v1/deliveries?filter[dateFrom]='.$today)
+            ->assertJsonPath('data.pagination.total', 1);
+        $this->getJson('/api/v1/deliveries?filter[dateTo]='.$yesterday)
+            ->assertJsonPath('data.pagination.total', 0);
+        $this->getJson('/api/v1/deliveries?filter[dateFrom]='.$tomorrow)
+            ->assertJsonPath('data.pagination.total', 0);
+        $this->getJson('/api/v1/deliveries?filter[dateFrom]='.$tomorrow.'&filter[dateTo]='.$yesterday)
+            ->assertUnprocessable()->assertJsonValidationErrors('filter.dateTo');
+        $this->getJson('/api/v1/deliveries?filter[search]='.$o->order_number)
+            ->assertJsonPath('data.pagination.total', 1);
+        $this->getJson('/api/v1/deliveries?filter[status]=2')
+            ->assertJsonPath('data.pagination.total', 0);
+    }
+
+    public function test_negative_validation_payment_method_and_idempotency_reuse(): void
+    {
+        $o = $this->ready();
+        $this->deliver($o, ['collectedAmount' => '5.00'])->assertUnprocessable()
+            ->assertJsonValidationErrors('paymentMethod');
+        $this->deliver($o, ['collectedAmount' => '5.00', 'paymentMethod' => 1])->assertUnprocessable()
+            ->assertJsonValidationErrors('paymentDestinationId');
+        $this->deliver($o, ['collectedAmount' => 10, 'paymentMethod' => 0])->assertUnprocessable()
+            ->assertJsonValidationErrors('collectedAmount');
+        $this->deliver($o, ['collectedAmount' => '0.00', 'paymentMethod' => 0])->assertUnprocessable()
+            ->assertJsonValidationErrors('paymentMethod');
+        $this->deliver($o, ['collectedAmount' => '0.00'], 'key-reused')->assertOk();
+        $this->deliver($o, ['collectedAmount' => '0.00', 'receiverName' => 'Other'], 'key-reused')->assertStatus(409);
+        $this->assertDatabaseCount('deliveries', 1);
+    }
+
+    public function test_payment_needs_finance_permission_but_free_handover_does_not(): void
+    {
+        $this->adminRole->revokePermissionTo('finance.collections.create');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $o = $this->ready();
+        $this->deliver($o, ['collectedAmount' => '10.00', 'paymentMethod' => 0])->assertForbidden();
+        $this->deliver($o, [], 'no-payment-without-finance')->assertOk();
+    }
+
+    public function test_cancel_only_requires_deliveries_cancel_not_general_finance_reverse_permission(): void
+    {
+        $this->adminRole->revokePermissionTo('finance.collections.reverse');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $o = $this->ready();
+        $this->deliver($o, ['collectedAmount' => '10.00', 'paymentMethod' => 0])->assertOk();
+        $this->cancel(Delivery::firstOrFail()->id,
+            ['reason' => 'Operator mistake', 'fundsReturnConfirmed' => true])->assertOk();
+        $this->assertDatabaseCount('finance_ledger_entries', 3);
+    }
+}
