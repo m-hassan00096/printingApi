@@ -5,5 +5,6 @@
     "Customers": true,
     "Orders": true,
     "Finance": true,
-    "Production": true
+    "Production": true,
+    "Deliveries": true
 }
