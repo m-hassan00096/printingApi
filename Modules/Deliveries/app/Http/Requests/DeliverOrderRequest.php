@@ -2,6 +2,7 @@
 namespace Modules\Deliveries\Http\Requests;
 
 use Illuminate\Validation\Validator;
+use Modules\Settings\Contracts\PaymentDestinationLookup;
 
 class DeliverOrderRequest extends DeliveryWriteRequest
 {
@@ -34,7 +35,7 @@ class DeliverOrderRequest extends DeliveryWriteRequest
             if ($v->errors()->has('collectedAmount') || $v->errors()->has('paymentMethod')
                 || $v->errors()->has('paymentDestinationId')) return;
             $amount = $this->input('collectedAmount', '0.00');
-            $paid = (float) $amount > 0;
+            $paid = \Modules\Deliveries\Support\DeliveryAmount::cents((string) $amount) > 0;
             $method = $this->input('paymentMethod');
             $destination = $this->input('paymentDestinationId');
             if ($paid && $method === null) $v->errors()->add('paymentMethod', __('validation.required', ['attribute' => 'paymentMethod']));
@@ -43,6 +44,9 @@ class DeliverOrderRequest extends DeliveryWriteRequest
                 $v->errors()->add('paymentDestinationId', __('validation.required', ['attribute' => 'paymentDestinationId']));
             if ((! $paid || (string) $method === '0') && $destination !== null)
                 $v->errors()->add('paymentDestinationId', __('validation.prohibited', ['attribute' => 'paymentDestinationId']));
+            if ($paid && in_array((string) $method, ['1','2'], true) && $destination !== null
+                && ! app(PaymentDestinationLookup::class)->existsForMethod((int) $method, (int) $destination))
+                $v->errors()->add('paymentDestinationId', __('validation.exists', ['attribute' => 'paymentDestinationId']));
         }];
     }
 }

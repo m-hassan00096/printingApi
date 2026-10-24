@@ -6,6 +6,9 @@ interface PaymentDestinationLookup
 {
     public function available(int $method, ?int $destinationId): bool;
 
+    /** True for an existing destination of the requested category, even if inactive/soft-deleted. */
+    public function existsForMethod(int $method, int $destinationId): bool;
+
     /** Returns null if the selected destination was disabled/deleted since HTTP validation.
      * @return array{bankAccountId: ?int, eWalletId: ?int, label: ?string}|null
      */

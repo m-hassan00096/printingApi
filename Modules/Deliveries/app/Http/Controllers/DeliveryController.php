@@ -30,7 +30,7 @@ class DeliveryController extends Controller
     public function store(int $order, DeliverOrderRequest $r, DeliveryWorkflowService $service): JsonResponse
     {
         $data = $r->validated();
-        if (\Modules\Finance\Support\Money::cents($data['collectedAmount'] ?? '0.00') > 0
+        if (\Modules\Deliveries\Support\DeliveryAmount::cents($data['collectedAmount'] ?? '0.00') > 0
             && ! $r->user()->can('finance.collections.create')) abort(403);
         $service->deliver($order, $data, (int) $r->user()->id, $r->user()->name, $r->idempotencyHash());
         return ApiResponse::success(message: __('deliveries.messages.delivered'));

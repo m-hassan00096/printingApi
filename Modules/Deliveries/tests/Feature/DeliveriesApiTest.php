@@ -246,4 +246,70 @@ class DeliveriesApiTest extends OrdersTestCase
             ['reason' => 'Operator mistake', 'fundsReturnConfirmed' => true])->assertOk();
         $this->assertDatabaseCount('finance_ledger_entries', 3);
     }
+    public function test_bank_and_wallet_destinations_validate_category_and_post_receipts(): void
+    {
+        $bank = \Modules\Settings\Models\BankAccount::query()->create([
+            'bank_name' => 'Main Bank', 'account_number' => '1234567890',
+            'is_default' => false, 'status' => \Modules\Settings\Enums\PaymentDestinationStatus::ACTIVE,
+        ]);
+        $wallet = \Modules\Settings\Models\EWallet::query()->create([
+            'name' => 'Wallet', 'phone' => '01098765432', 'account_holder' => 'Treasurer',
+            'is_default' => false, 'status' => \Modules\Settings\Enums\PaymentDestinationStatus::ACTIVE,
+        ]);
+        $first = $this->ready();
+        $second = $this->ready();
+        $this->deliver($first, ['collectedAmount' => '10.00', 'paymentMethod' => 1,
+            'paymentDestinationId' => $bank->id], 'paid-bank')->assertOk();
+        $this->deliver($second, ['collectedAmount' => '10.00', 'paymentMethod' => 2,
+            'paymentDestinationId' => $wallet->id], 'paid-wallet')->assertOk();
+        $this->assertDatabaseHas('finance_collections',
+            ['order_id' => $first->id, 'bank_account_id' => $bank->id, 'e_wallet_id' => null]);
+        $this->assertDatabaseHas('finance_collections',
+            ['order_id' => $second->id, 'bank_account_id' => null, 'e_wallet_id' => $wallet->id]);
+    }
+
+    public function test_wrong_destination_type_is_422_and_disabled_destination_is_409_without_breaking_replay(): void
+    {
+        $wallet = \Modules\Settings\Models\EWallet::query()->create([
+            'name' => 'Unrelated Wallet', 'phone' => '01090001111', 'account_holder' => 'Cashier',
+            'is_default' => false, 'status' => \Modules\Settings\Enums\PaymentDestinationStatus::ACTIVE,
+        ]);
+        $o = $this->ready();
+        $this->deliver($o, ['collectedAmount' => '5.00', 'paymentMethod' => 1,
+            'paymentDestinationId' => $wallet->id], 'bad-type')->assertUnprocessable()
+            ->assertJsonValidationErrors('paymentDestinationId');
+
+        $bank = \Modules\Settings\Models\BankAccount::query()->create([
+            'bank_name' => 'Main Bank', 'account_number' => '1234567890',
+            'is_default' => false, 'status' => \Modules\Settings\Enums\PaymentDestinationStatus::ACTIVE,
+        ]);
+        $paid = ['collectedAmount' => '5.00', 'paymentMethod' => 1, 'paymentDestinationId' => $bank->id];
+        $this->deliver($o, $paid, 'bank-replay')->assertOk();
+        $bank->status = \Modules\Settings\Enums\PaymentDestinationStatus::INACTIVE;
+        $bank->save();
+        $this->deliver($o, $paid, 'bank-replay')->assertOk();
+
+        $another = $this->ready();
+        $this->deliver($another, $paid, 'disabled-bank')->assertStatus(409);
+        $this->assertDatabaseCount('finance_collections', 1);
+    }
+
+    public function test_balance_and_collection_metadata_are_hidden_without_finance_view_permission(): void
+    {
+        $o = $this->ready();
+        $this->deliver($o, ['collectedAmount' => '15.00', 'paymentMethod' => 0])->assertOk();
+        $d = Delivery::query()->firstOrFail();
+        $this->adminRole->revokePermissionTo('finance.balances.view');
+        $this->adminRole->revokePermissionTo('finance.collections.view');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->getJson('/api/v1/deliveries/'.$d->id)->assertOk()
+            ->assertJsonPath('data.delivery.collection', null)
+            ->assertJsonPath('data.delivery.receiptNumber', null)
+            ->assertJsonPath('data.delivery.receivedAmount', '15.00');
+        $other = $this->ready();
+        $this->getJson('/api/v1/deliveries/ready/'.$other->id)->assertOk()
+            ->assertJsonPath('data.customerBalance', null);
+    }
+
 }

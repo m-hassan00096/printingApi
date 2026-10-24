@@ -8,6 +8,15 @@ use Modules\Settings\Models\EWallet;
 
 class PaymentDestinationResolver implements PaymentDestinationLookup
 {
+    public function existsForMethod(int $method, int $destinationId): bool
+    {
+        return match ($method) {
+            1 => BankAccount::withTrashed()->whereKey($destinationId)->exists(),
+            2 => EWallet::withTrashed()->whereKey($destinationId)->exists(),
+            default => false,
+        };
+    }
+
     public function available(int $method, ?int $destinationId): bool
     {
         if ($method === 0) {

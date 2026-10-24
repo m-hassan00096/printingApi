@@ -34,7 +34,7 @@ class DeliveryWorkflowService
                 throw new DeliveryException('already_delivered');
             }
             $collectionId = null;
-            if (\Modules\Finance\Support\Money::cents($payload['collectedAmount']) > 0) {
+            if (\Modules\Deliveries\Support\DeliveryAmount::cents($payload['collectedAmount']) > 0) {
                 $collectionId = $this->finance->post($orderId, $order['customerId'],
                     $payload['collectedAmount'], (int) $payload['paymentMethod'],
                     $payload['paymentDestinationId'], $actorId, (bool) $payload['confirmCreditBalance']);
