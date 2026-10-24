@@ -10,7 +10,7 @@ class OrderFinanceReferenceService implements OrderFinanceReference
     public function assertCustomerOwnsOrder(int $orderId, int $customerId): void
     {
         if (! Order::query()->whereKey($orderId)->where('customer_id', $customerId)->exists()) {
-            throw ValidationException::withMessages(['orderId' => __('finance.messages.invalid_order')]);
+            throw ValidationException::withMessages(['orderId' => __('validation.exists', ['attribute' => 'orderId'])]);
         }
     }
 }

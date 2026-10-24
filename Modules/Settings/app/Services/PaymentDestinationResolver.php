@@ -28,6 +28,6 @@ class PaymentDestinationResolver implements PaymentDestinationLookup
                 return ['bankAccountId' => null, 'eWalletId' => $wallet->id, 'label' => $wallet->name];
             }
         }
-        throw ValidationException::withMessages(['paymentDestinationId' => __('finance.messages.invalid_destination')]);
+        throw ValidationException::withMessages(['paymentDestinationId' => __('validation.exists', ['attribute' => 'paymentDestinationId'])]);
     }
 }

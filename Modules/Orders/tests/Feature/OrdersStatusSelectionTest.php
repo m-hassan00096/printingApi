@@ -7,6 +7,9 @@ use Modules\Identity\Enums\UserStatus;
 use Modules\Identity\Models\Permission;
 use Modules\Identity\Models\User;
 use Modules\Orders\Enums\OrderStatus;
+use Modules\Orders\Contracts\ConfirmOrderFinanceData;
+use Modules\Orders\Contracts\CancelOrderFinanceData;
+use Modules\Orders\Services\UnavailableOrderFinanceGateway;
 use Modules\Orders\Models\Order;
 use Modules\Orders\Services\OrderFinanceGateway;
 use Modules\Orders\Tests\Feature\Support\OrdersTestCase;
@@ -30,10 +33,11 @@ class OrdersStatusSelectionTest extends OrdersTestCase
 
     public function test_create_confirmed_without_finance_rolls_back_draft_items_and_idempotency(): void
     {
+        $this->app->instance(OrderFinanceGateway::class, new UnavailableOrderFinanceGateway());
         $this->withHeader('Idempotency-Key', 'direct-confirm-no-finance')
             ->postJson('/api/v1/orders', $this->data([
                 'status' => 1,
-                'depositAmount' => '75.00',
+                'depositAmount' => '75.00', 'paymentMethod' => 0,
             ]))->assertStatus(409)
             ->assertJsonPath('message', __('orders.messages.finance_unavailable'));
 
@@ -49,12 +53,13 @@ class OrdersStatusSelectionTest extends OrdersTestCase
         $draft = $this->draft();
         $original = $draft->fresh();
 
+        $this->app->instance(OrderFinanceGateway::class, new UnavailableOrderFinanceGateway());
         $this->withHeader('Idempotency-Key', 'update-confirm-no-finance')
             ->patchJson($this->path($draft), [
                 'status' => 1,
                 'customerId' => $this->secondCustomer->id,
                 'notes' => 'Must roll back',
-                'depositAmount' => '25.00',
+                'depositAmount' => '25.00', 'paymentMethod' => 0,
             ])->assertStatus(409)
             ->assertJsonPath('message', __('orders.messages.finance_unavailable'));
 
@@ -72,7 +77,7 @@ class OrdersStatusSelectionTest extends OrdersTestCase
     public function test_create_confirmed_with_finance_adapter_returns_number_and_replays_without_reposting(): void
     {
         $fake = $this->fakeFinance();
-        $payload = $this->data(['status' => 1, 'depositAmount' => '100.00']);
+        $payload = $this->data(['status' => 1, 'depositAmount' => '100.00', 'paymentMethod' => 0]);
         $this->withHeader('Idempotency-Key', 'direct-confirm-with-gateway');
 
         $this->postJson('/api/v1/orders', $payload)->assertCreated()
@@ -112,7 +117,7 @@ class OrdersStatusSelectionTest extends OrdersTestCase
                 'status' => 1,
                 'customerId' => $this->secondCustomer->id,
                 'notes' => 'Confirmed from edit',
-                'depositAmount' => '50.00',
+                'depositAmount' => '50.00', 'paymentMethod' => 0,
             ])->assertOk()
             ->assertJsonPath('message', __('orders.messages.confirmed'))
             ->assertJsonPath('data', null);
@@ -197,19 +202,19 @@ class OrdersStatusSelectionTest extends OrdersTestCase
     private function fakeFinance(): object
     {
         // Test-only adapter simulates a successful Finance integration;
-        // production's binding remains explicitly unavailable (409).
+        // production uses the real Finance implementation.
         $adapter = new class implements OrderFinanceGateway
         {
             public int $calls = 0;
             public ?string $lastDeposit = null;
 
-            public function recordConfirmation(Order $order, string $idempotencyKey, ?string $depositAmount): void
+            public function recordConfirmation(ConfirmOrderFinanceData $data): void
             {
                 $this->calls++;
-                $this->lastDeposit = $depositAmount;
+                $this->lastDeposit = $data->depositAmount;
             }
 
-            public function recordCancellation(Order $order, string $idempotencyKey): void {}
+            public function recordCancellation(CancelOrderFinanceData $data): void {}
         };
 
         $this->app->instance(OrderFinanceGateway::class, $adapter);

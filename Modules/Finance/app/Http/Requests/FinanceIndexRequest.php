@@ -12,7 +12,7 @@ class FinanceIndexRequest extends FormRequest
         return [
             'page' => ['sometimes', 'integer', 'min:1'],
             'perPage' => ['sometimes', 'integer', 'min:1', 'max:100'],
-            'filter' => ['sometimes', 'array'],
+            'filter' => ['sometimes', 'array:search,dateFrom,dateTo,paymentMethod,source,status,type'],
             'filter.search' => ['sometimes', 'string', 'max:200'],
             'filter.dateFrom' => ['sometimes', 'date_format:Y-m-d'],
             'filter.dateTo' => ['sometimes', 'date_format:Y-m-d'],
