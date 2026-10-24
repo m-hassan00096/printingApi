@@ -11,6 +11,9 @@ use Modules\Orders\Enums\OrderStatus;
 use Modules\Orders\Models\Order;
 use Modules\Orders\Tests\Feature\Support\OrdersTestCase;
 use Spatie\Permission\PermissionRegistrar;
+use Modules\Settings\Models\BankAccount;
+use Modules\Settings\Models\EWallet;
+use Modules\Settings\Enums\PaymentDestinationStatus;
 
 class FinanceApiTest extends OrdersTestCase
 {
@@ -140,4 +143,74 @@ class FinanceApiTest extends OrdersTestCase
                 'paymentMethod' => 1,
             ])->assertUnprocessable()->assertJsonValidationErrors('paymentDestinationId');
     }
+
+    public function test_bank_and_wallet_use_one_destination_key_and_summary_groups_payment_methods(): void
+    {
+        $bank = BankAccount::query()->create([
+            'bank_name' => 'National Bank', 'account_number' => '123456780',
+            'is_default' => false, 'status' => PaymentDestinationStatus::ACTIVE,
+        ]);
+        $wallet = EWallet::query()->create([
+            'name' => 'Vodafone Cash', 'phone' => '01098765432',
+            'account_holder' => 'Account Owner', 'is_default' => false,
+            'status' => PaymentDestinationStatus::ACTIVE,
+        ]);
+
+        $date = now('Africa/Cairo')->subDays(2)->format('Y-m-d');
+        $bankResponse = $this->withHeader('Idempotency-Key', 'bank-collection')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $this->customer->id, 'amount' => '1200.50',
+                'paymentMethod' => 1, 'paymentDestinationId' => $bank->id,
+                'collectedOn' => $date,
+            ])->assertCreated();
+
+        $this->getJson('/api/v1/finance/collections/'.$bankResponse->json('data.id'))
+            ->assertOk()
+            ->assertJsonPath('data.paymentDestinationId', $bank->id)
+            ->assertJsonPath('data.paymentMethod', 1)
+            ->assertJsonPath('data.collectedOn', $date);
+
+        $walletResponse = $this->withHeader('Idempotency-Key', 'wallet-collection')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $this->customer->id, 'amount' => '300.00',
+                'paymentMethod' => 2, 'paymentDestinationId' => $wallet->id,
+            ])->assertCreated();
+
+        $this->getJson('/api/v1/finance/collections/'.$walletResponse->json('data.id'))
+            ->assertOk()->assertJsonPath('data.paymentDestinationId', $wallet->id);
+
+        $this->getJson('/api/v1/finance/collections/summary')->assertOk()
+            ->assertJsonPath('data.totalCollected', '1500.50')
+            ->assertJsonPath('data.cashTotal', '0.00')
+            ->assertJsonPath('data.bankTotal', '1200.50')
+            ->assertJsonPath('data.walletTotal', '300.00')
+            ->assertJsonPath('data.collectionsCount', 2);
+
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id.'/ledger')
+            ->assertOk()->assertJsonPath('data.entries.1.effectiveDate', $date);
+
+        $this->withHeader('Idempotency-Key', 'cash-with-bank')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $this->customer->id, 'amount' => '15.00',
+                'paymentMethod' => 0, 'paymentDestinationId' => $bank->id,
+            ])->assertUnprocessable()->assertJsonValidationErrors('paymentDestinationId');
+    }
+
+    public function test_inactive_destination_cannot_be_used_for_collection(): void
+    {
+        $bank = BankAccount::query()->create([
+            'bank_name' => 'Disabled Bank', 'account_number' => '76543210',
+            'is_default' => false, 'status' => PaymentDestinationStatus::INACTIVE,
+        ]);
+
+        $this->withHeader('Idempotency-Key', 'inactive-bank')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $this->customer->id, 'amount' => '100.00',
+                'paymentMethod' => 1, 'paymentDestinationId' => $bank->id,
+            ])->assertUnprocessable()->assertJsonValidationErrors('paymentDestinationId');
+
+        $this->assertDatabaseCount('finance_collections', 0);
+        $this->assertDatabaseCount('finance_ledger_entries', 0);
+    }
+
 }
