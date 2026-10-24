@@ -11,5 +11,6 @@ class OrdersServiceProvider extends ModuleServiceProvider
     protected array $providers = [
         RouteServiceProvider::class,
         OrdersIntegrationServiceProvider::class,
+        OrdersFinanceReferenceProvider::class,
     ];
 }

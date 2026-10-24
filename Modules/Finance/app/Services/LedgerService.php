@@ -1,8 +1,9 @@
 <?php
 namespace Modules\Finance\Services;
 
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Modules\Customers\Contracts\CustomerFinanceReference;
 use Modules\Finance\Enums\BalanceType;
 use Modules\Finance\Enums\LedgerEntryType;
 use Modules\Finance\Exceptions\FinanceException;
@@ -11,18 +12,19 @@ use Modules\Finance\Support\Money;
 
 class LedgerService
 {
-    /** Lock the customer record first for every financial write, consistent with Customers/Orders. */
+    public function __construct(private readonly CustomerFinanceReference $customers) {}
+
+    /** Every financial writer acquires the same customer lock before ledger posts. */
     public function lockCustomer(int $customerId): void
     {
-        if (! DB::table('customers')->where('id', $customerId)->whereNull('deleted_at')->lockForUpdate()->exists()) {
-            throw new FinanceException('customer_not_found', \App\Enums\HttpStatusCode::NOT_FOUND);
-        }
+        $this->customers->assertExistsAndLock($customerId);
     }
 
     public function cents(int $customerId): int
     {
-        return Money::cents((string) (DB::table('finance_ledger_entries')
-            ->where('customer_id', $customerId)->sum('signed_amount') ?: '0'));
+        $value = DB::table('finance_ledger_entries')->where('customer_id', $customerId)
+            ->selectRaw('COALESCE(SUM(signed_amount), 0) AS amount')->value('amount');
+        return Money::cents((string) $value);
     }
 
     public function balance(int $customerId): array
