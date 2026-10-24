@@ -67,7 +67,7 @@ class DeliveriesApiTest extends OrdersTestCase
             ['serviceId' => $this->service->id, 'quantity' => 100, 'agreedTotal' => '100.00'],
             ['serviceId' => $this->secondService->id, 'quantity' => 100, 'agreedTotal' => '200.00'],
         ]]);
-        $partial->items()->orderBy('id')->first()->update(['production_stage' => 4]);
+        $partial->items()->orderBy('id')->firstOrFail()->forceFill(['production_stage' => 4])->save();
         $partial->production_status = OrderProductionStatus::PARTIALLY_READY;
         $partial->save();
         $unready = $this->confirmed();
