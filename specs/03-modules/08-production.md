@@ -4,6 +4,18 @@ Date: 2026-10-24
 Branch: feature/production
 Status: Planning draft for API agreement. No Production functionality has yet been implemented.
 
+
+## Implementation choice (2026-10-24): STATIC production workflow
+
+**APPROVED:** Keep Production simple and static for the initial release. The proposed database-configurable / fully dynamic workflow engine is **DEFERRED**; see [09-production-dynamic-workflow-future.md](./09-production-dynamic-workflow-future.md).
+
+- The authoritative stages are the existing integer-backed `Modules/Orders/app/Enums/OrderItemStage.php`: 0 NOT_STARTED, 1 DESIGN_IN_PROGRESS, 2 DESIGN_COMPLETED, 3 PRINTING, 4 READY_FOR_DELIVERY. DESIGN_IN_PROGRESS and DESIGN_COMPLETED occupy the same design board column.
+- Transitions, available buttons, role checks and any required input are explicitly defined in Laravel Actions/FormRequests, **not** loaded from database-configured stage/transition definitions.
+- Only the known required input is `printingLocationId` for sending to printing (single, combined complete-and-send, or batch), and for printer reassignment; the existing Settings `printingLocations` select is reused.
+- Existing `order_items.production_stage`, `order_items.designer_id`, `order_items.printing_location_id` and `orders.production_status` remain authoritative. **Do not create `production_stages`, `production_transitions`, `production_transition_fields` or `production_item_states` now.**
+- Production adds only necessary history/idempotency persistence. Design actions, sending, reassignment, marking ready, undo, reporting and filters retain their approved static contracts in this document.
+- No dynamic admin stage editor, generic handler registry or `board-config` action-definition API in v1. We can reconsider after the production workflow proves stable.
+
 ## 1. Adopted user flow
 
 - Production starts only for CONFIRMED Orders; Draft and CANCELLED never enter the board.
