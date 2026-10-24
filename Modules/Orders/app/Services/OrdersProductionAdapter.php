@@ -216,7 +216,7 @@ class OrdersProductionAdapter implements ProductionOrderGateway
             fn (Builder $q) => $q->where('status', '!=', OrderStatus::DRAFT->value))->exists();
     }
 
-    private function filtered(array $filters, ?array $myItemIds): Builder
+    private function filtered(array $filters, ?Builder $myItemQuery): Builder
     {
         $today = CarbonImmutable::now('Africa/Cairo')->toDateString();
         $query = OrderItem::query()->whereHas('order',
