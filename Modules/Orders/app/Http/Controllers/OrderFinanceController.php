@@ -3,11 +3,11 @@ namespace Modules\Orders\Http\Controllers;
 
 use App\Helpers\ApiResponse;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\Rule;
 use Modules\Orders\Contracts\CancelOrderFinanceData;
+use Modules\Orders\Http\Requests\ConfirmOrderRequest;
+use Modules\Orders\Http\Requests\CancelOrderRequest;
 use Modules\Orders\Enums\OrderStatus;
 use Modules\Orders\Exceptions\OrdersBusinessException;
 use Modules\Orders\Models\Order;
@@ -17,18 +17,9 @@ use Modules\Orders\Services\OrderIdempotencyKey;
 
 class OrderFinanceController extends Controller
 {
-    public function confirm(Request $request, Order $order, OrderConfirmationService $confirmation): JsonResponse
+    public function confirm(ConfirmOrderRequest $request, Order $order, OrderConfirmationService $confirmation): JsonResponse
     {
-        $amount = $request->input('depositAmount');
-        $hasPayment = is_string($amount) && (float) $amount > 0;
-        $data = $request->validate([
-            'depositAmount' => ['sometimes', 'nullable', 'string',
-                'regex:/\A(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,2})?\z/D'],
-            'paymentMethod' => [Rule::requiredIf($hasPayment), 'nullable', 'integer', 'in:0,1,2',
-                Rule::prohibitedIf(! $hasPayment)],
-            'paymentDestinationId' => [Rule::requiredIf($hasPayment && in_array((string) $request->input('paymentMethod'), ['1', '2'], true)),
-                'nullable', 'integer', 'min:1', Rule::prohibitedIf(! $hasPayment || (string) $request->input('paymentMethod') === '0')],
-        ]);
+        $data = $request->validated();
         $key = OrderIdempotencyKey::required($request);
         $confirmation->confirm($order, $key, $data['depositAmount'] ?? null,
             $data['paymentMethod'] ?? null, $data['paymentDestinationId'] ?? null);
@@ -36,9 +27,9 @@ class OrderFinanceController extends Controller
         return ApiResponse::success(message: __('orders.messages.confirmed'));
     }
 
-    public function cancel(Request $request, Order $order, OrderFinanceGateway $finance): JsonResponse
+    public function cancel(CancelOrderRequest $request, Order $order, OrderFinanceGateway $finance): JsonResponse
     {
-        $data = $request->validate(['reason' => ['required', 'string', 'min:3', 'max:3000']]);
+        $data = $request->validated();
         $key = OrderIdempotencyKey::required($request);
         DB::transaction(function () use ($request, $order, $finance, $key, $data): void {
             $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();

@@ -31,4 +31,9 @@ class UpdateOrderRequest extends FormRequest
             'notes' => ['sometimes', 'nullable', 'string', 'max:10000'],
         ];
     }
+    public function after(): array
+    {
+        return $this->depositValidationCallbacks();
+    }
+
 }

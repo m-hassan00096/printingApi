@@ -37,4 +37,9 @@ class StoreOrderRequest extends FormRequest
             'items.*.agreedTotal' => ['required', 'string', 'regex:/\A(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,2})?\z/D'],
         ];
     }
+    public function after(): array
+    {
+        return $this->depositValidationCallbacks();
+    }
+
 }
