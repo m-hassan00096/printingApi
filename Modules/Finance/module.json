@@ -1,0 +1,11 @@
+{
+  "name": "Finance",
+  "alias": "finance",
+  "description": "Customer ledger, collections and refunds",
+  "keywords": [],
+  "priority": 0,
+  "providers": [
+    "Modules\\Finance\\Providers\\FinanceServiceProvider"
+  ],
+  "files": []
+}

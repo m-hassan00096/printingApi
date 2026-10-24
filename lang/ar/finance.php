@@ -1,0 +1,32 @@
+<?php
+return [
+    'balance_types' => ['zero' => 'رصيد صفر', 'debit' => 'مدين', 'credit' => 'دائن'],
+    'payment_methods' => ['cash' => 'نقدي', 'bank_transfer' => 'تحويل بنكي', 'e_wallet' => 'محفظة إلكترونية'],
+    'collection_sources' => ['general' => 'تحصيل عام', 'order_deposit' => 'عربون أوردر', 'delivery' => 'تسليم'],
+    'collection_statuses' => ['posted' => 'مسجل', 'reversed' => 'معكوس'],
+    'ledger_types' => ['order_debt' => 'مديونية أوردر', 'collection' => 'تحصيل', 'order_cancellation' => 'إلغاء أوردر', 'collection_reversal' => 'عكس تحصيل', 'refund' => 'مرتجع مالي', 'opening_balance' => 'رصيد افتتاحي'],
+    'messages' => [
+        'customer_not_found' => 'العميل غير موجود',
+        'amount_out_of_range' => 'المبلغ خارج الحدود المسموحة',
+        'duplicate_operation' => 'تم تسجيل العملية من قبل',
+        'idempotency_required' => 'مفتاح منع تكرار العملية مطلوب',
+        'idempotency_reused' => 'تم استخدام مفتاح العملية لطلب مختلف',
+        'missing_order_liability' => 'لم يتم العثور على مديونية الأوردر الأصلية',
+        'opening_exists' => 'تم تسجيل رصيد افتتاحي لهذا العميل من قبل',
+        'opening_created' => 'تم تسجيل الرصيد الافتتاحي بنجاح',
+        'collection_created' => 'تم تسجيل التحصيل بنجاح',
+        'collection_reversed' => 'تم عكس التحصيل بنجاح',
+        'collection_already_reversed' => 'تم عكس التحصيل من قبل',
+        'refund_created' => 'تم تسجيل المرتجع بنجاح',
+        'insufficient_credit' => 'الرصيد الدائن للعميل غير كافٍ',
+        'invalid_destination' => 'الحساب أو المحفظة غير متاح',
+        'invalid_order' => 'الأوردر غير مرتبط بالعميل',
+        'positive_amount' => 'المبلغ يجب أن يكون أكبر من صفر',
+    ],
+    'permissions' => [
+        'balances.view' => 'عرض أرصدة العملاء', 'ledger.view' => 'عرض كشف حساب العميل',
+        'opening_balances.create' => 'تسجيل رصيد افتتاحي', 'collections.view' => 'عرض التحصيلات',
+        'collections.create' => 'إضافة تحصيل', 'collections.reverse' => 'عكس تحصيل',
+        'refunds.view' => 'عرض المرتجعات المالية', 'refunds.create' => 'تسجيل مرتجع مالي',
+    ],
+];

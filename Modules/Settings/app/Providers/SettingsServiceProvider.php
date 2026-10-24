@@ -14,5 +14,6 @@ class SettingsServiceProvider extends ModuleServiceProvider
         RouteServiceProvider::class,
         SettingsSelectServiceProvider::class,
         ParameterValueUsageServiceProvider::class,
+        SettingsFinanceIntegrationServiceProvider::class,
     ];
 }

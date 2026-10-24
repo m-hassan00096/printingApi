@@ -3,5 +3,6 @@
     "Settings": true,
     "PrintingServices": true,
     "Customers": true,
-    "Orders": true
+    "Orders": true,
+    "Finance": true
 }

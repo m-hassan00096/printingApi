@@ -12,5 +12,6 @@ class CustomersServiceProvider extends ModuleServiceProvider
         RouteServiceProvider::class,
         CustomersLifecycleServiceProvider::class,
         CustomersSelectServiceProvider::class,
+        CustomersFinanceIntegrationServiceProvider::class,
     ];
 }

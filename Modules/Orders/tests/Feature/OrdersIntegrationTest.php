@@ -5,6 +5,8 @@ require_once __DIR__.'/Support/OrdersTestCase.php';
 
 use Modules\Orders\Enums\OrderStatus;
 use Modules\Orders\Models\Order;
+use Modules\Orders\Services\OrderFinanceGateway;
+use Modules\Orders\Services\UnavailableOrderFinanceGateway;
 use Modules\Orders\Tests\Feature\Support\OrdersTestCase;
 
 class OrdersIntegrationTest extends OrdersTestCase
@@ -39,8 +41,9 @@ class OrdersIntegrationTest extends OrdersTestCase
     {
         $order = $this->draft();
 
+        $this->app->instance(OrderFinanceGateway::class, new UnavailableOrderFinanceGateway());
         $this->withHeader('Idempotency-Key', 'orders-confirm-001')
-            ->postJson($this->path($order).'/confirm', ['depositAmount' => '50.00'])
+            ->postJson($this->path($order).'/confirm', ['depositAmount' => '50.00', 'paymentMethod' => 0])
             ->assertStatus(409)
             ->assertJsonPath('message', __('orders.messages.finance_unavailable'));
 
@@ -66,6 +69,7 @@ class OrdersIntegrationTest extends OrdersTestCase
         $order->confirmed_at = now();
         $order->save();
 
+        $this->app->instance(OrderFinanceGateway::class, new UnavailableOrderFinanceGateway());
         $this->withHeader('Idempotency-Key', 'orders-cancel-001')
             ->postJson($this->path($order).'/cancel', ['reason' => 'Customer withdrew'])
             ->assertStatus(409)->assertJsonPath('message', __('orders.messages.finance_unavailable'));
