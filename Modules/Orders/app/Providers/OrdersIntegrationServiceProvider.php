@@ -14,7 +14,10 @@ class OrdersIntegrationServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->app->bind(OrderFinanceGateway::class, UnavailableOrderFinanceGateway::class);
+        // Finance may have registered its implementation before Orders; never overwrite it.
+        if (! $this->app->bound(OrderFinanceGateway::class)) {
+            $this->app->bind(OrderFinanceGateway::class, UnavailableOrderFinanceGateway::class);
+        }
     }
 
     public function boot(CustomerLifecycleRegistry $customers, PrintingServiceUsageRegistry $services): void

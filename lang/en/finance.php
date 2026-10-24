@@ -9,6 +9,7 @@ return [
         'customer_not_found' => 'Customer not found', 'amount_out_of_range' => 'Amount out of range',
         'duplicate_operation' => 'Operation was already posted', 'idempotency_required' => 'Idempotency key is required',
         'idempotency_reused' => 'Idempotency key was reused with a different request',
+        'missing_order_liability' => 'Original order liability was not found',
         'opening_exists' => 'Opening balance already recorded', 'opening_created' => 'Opening balance recorded',
         'collection_created' => 'Collection recorded', 'collection_reversed' => 'Collection reversed',
         'collection_already_reversed' => 'Collection already reversed', 'refund_created' => 'Refund recorded',

@@ -1,17 +1,18 @@
 <?php
 namespace Modules\Orders\Services;
 
+use Modules\Orders\Contracts\ConfirmOrderFinanceData;
+use Modules\Orders\Contracts\CancelOrderFinanceData;
 use Modules\Orders\Exceptions\OrdersBusinessException;
-use Modules\Orders\Models\Order;
 
 class UnavailableOrderFinanceGateway implements OrderFinanceGateway
 {
-    public function recordConfirmation(Order $order, string $idempotencyKey, ?string $depositAmount): void
+    public function recordConfirmation(ConfirmOrderFinanceData $data): void
     {
         throw new OrdersBusinessException('finance_unavailable');
     }
 
-    public function recordCancellation(Order $order, string $idempotencyKey): void
+    public function recordCancellation(CancelOrderFinanceData $data): void
     {
         throw new OrdersBusinessException('finance_unavailable');
     }

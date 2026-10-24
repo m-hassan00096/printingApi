@@ -1,12 +1,13 @@
 <?php
 namespace Modules\Orders\Services;
 
-use Modules\Orders\Models\Order;
+use Modules\Orders\Contracts\ConfirmOrderFinanceData;
+use Modules\Orders\Contracts\CancelOrderFinanceData;
 
-/** Finance must post the immutable ledger inside the same DB transaction as status changes. */
+/** Consumer-owned boundary. Caller runs within the Orders status transaction. */
 interface OrderFinanceGateway
 {
-    public function recordConfirmation(Order $order, string $idempotencyKey, ?string $depositAmount): void;
+    public function recordConfirmation(ConfirmOrderFinanceData $data): void;
 
-    public function recordCancellation(Order $order, string $idempotencyKey): void;
+    public function recordCancellation(CancelOrderFinanceData $data): void;
 }

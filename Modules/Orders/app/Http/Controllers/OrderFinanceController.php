@@ -6,6 +6,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+use Modules\Orders\Contracts\CancelOrderFinanceData;
 use Modules\Orders\Enums\OrderStatus;
 use Modules\Orders\Exceptions\OrdersBusinessException;
 use Modules\Orders\Models\Order;
@@ -15,19 +17,21 @@ use Modules\Orders\Services\OrderIdempotencyKey;
 
 class OrderFinanceController extends Controller
 {
-    public function confirm(
-        Request $request,
-        Order $order,
-        OrderConfirmationService $confirmation,
-    ): JsonResponse {
+    public function confirm(Request $request, Order $order, OrderConfirmationService $confirmation): JsonResponse
+    {
+        $amount = $request->input('depositAmount');
+        $hasPayment = is_string($amount) && (float) $amount > 0;
         $data = $request->validate([
-            'depositAmount' => [
-                'sometimes', 'nullable', 'string',
-                'regex:/\A(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,2})?\z/D',
-            ],
+            'depositAmount' => ['sometimes', 'nullable', 'string',
+                'regex:/\A(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,2})?\z/D'],
+            'paymentMethod' => [Rule::requiredIf($hasPayment), 'nullable', 'integer', 'in:0,1,2',
+                Rule::prohibitedIf(! $hasPayment)],
+            'paymentDestinationId' => [Rule::requiredIf($hasPayment && in_array((string) $request->input('paymentMethod'), ['1', '2'], true)),
+                'nullable', 'integer', 'min:1', Rule::prohibitedIf(! $hasPayment || (string) $request->input('paymentMethod') === '0')],
         ]);
         $key = OrderIdempotencyKey::required($request);
-        $confirmation->confirm($order, $key, $data['depositAmount'] ?? null);
+        $confirmation->confirm($order, $key, $data['depositAmount'] ?? null,
+            $data['paymentMethod'] ?? null, $data['paymentDestinationId'] ?? null);
 
         return ApiResponse::success(message: __('orders.messages.confirmed'));
     }
@@ -36,25 +40,22 @@ class OrderFinanceController extends Controller
     {
         $data = $request->validate(['reason' => ['required', 'string', 'min:3', 'max:3000']]);
         $key = OrderIdempotencyKey::required($request);
-
         DB::transaction(function () use ($request, $order, $finance, $key, $data): void {
             $locked = Order::query()->whereKey($order->id)->lockForUpdate()->firstOrFail();
             if ($locked->status !== OrderStatus::CONFIRMED || $locked->delivered_at !== null) {
                 throw new OrdersBusinessException('cannot_cancel');
             }
-
-            // Reversal of liability happens in Finance; deposit refunds never
-            // happen here and require an explicit future Refund action.
-            $finance->recordCancellation($locked, $key);
-
+            $finance->recordCancellation(new CancelOrderFinanceData(
+                orderId: $locked->id, customerId: $locked->customer_id,
+                totalAmount: (string) $locked->total_amount, idempotencyKey: $key,
+                actorId: $request->user()->getKey(),
+            ));
             $locked->status = OrderStatus::CANCELLED;
             $locked->cancelled_at = now();
             $locked->cancelled_by = $request->user()->getKey();
             $locked->cancellation_reason = $data['reason'];
             $locked->save();
         }, 3);
-
         return ApiResponse::success(message: __('orders.messages.cancelled'));
     }
-
 }

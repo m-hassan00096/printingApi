@@ -11,6 +11,7 @@ return [
         'duplicate_operation' => 'تم تسجيل العملية من قبل',
         'idempotency_required' => 'مفتاح منع تكرار العملية مطلوب',
         'idempotency_reused' => 'تم استخدام مفتاح العملية لطلب مختلف',
+        'missing_order_liability' => 'لم يتم العثور على مديونية الأوردر الأصلية',
         'opening_exists' => 'تم تسجيل رصيد افتتاحي لهذا العميل من قبل',
         'opening_created' => 'تم تسجيل الرصيد الافتتاحي بنجاح',
         'collection_created' => 'تم تسجيل التحصيل بنجاح',
