@@ -5,6 +5,8 @@ namespace Modules\Identity\Tests\Feature\Selects;
 use App\Services\Select\SelectRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Auth;
+use Modules\Deliveries\Database\Seeders\DeliveriesPermissionSeeder;
+use Modules\Finance\Database\Seeders\FinancePermissionSeeder;
 use Modules\Identity\Enums\RoleStatus;
 use Modules\Identity\Enums\UserStatus;
 use Modules\Identity\Models\Permission;
@@ -111,4 +113,49 @@ class IdentitySelectEndpointTest extends TestCase
             ->assertUnprocessable()
             ->assertJsonPath('success', false);
     }
+    public function test_permission_catalog_uses_translated_finance_and_delivery_labels_and_preserves_ids(): void
+    {
+        $this->authenticateWithPermissions(['identity.roles.view']);
+
+        // Re-running the seeders repairs legacy translation keys in place.
+        $existing = Permission::firstOrCreate([
+            'name' => 'finance.balances.view',
+            'guard_name' => 'web',
+        ]);
+        $existing->translations()->updateOrCreate(
+            ['locale' => 'ar'],
+            ['alias' => 'finance.permissions.balances.view']
+        );
+        $originalId = $existing->id;
+
+        $this->seed(FinancePermissionSeeder::class);
+        $this->seed(DeliveriesPermissionSeeder::class);
+
+        $this->assertSame($originalId, Permission::where('name', 'finance.balances.view')->firstOrFail()->id);
+        $this->assertSame('View customer balances', trans('finance.permissions.balances.view', [], 'en'));
+        $this->assertSame('View ready orders', trans('deliveries.permissions.ready.view', [], 'en'));
+
+        $response = $this->getJson('/api/v1/selects?selects=permissions')->assertOk();
+        $options = collect($response->json('data.0.options'))->keyBy('value');
+
+        foreach ([
+            'finance.balances.view' => 'عرض أرصدة العملاء',
+            'finance.ledger.view' => 'عرض كشف حساب العميل',
+            'finance.opening_balances.create' => 'تسجيل رصيد افتتاحي',
+            'finance.collections.view' => 'عرض التحصيلات',
+            'finance.collections.create' => 'إضافة تحصيل',
+            'finance.collections.reverse' => 'عكس تحصيل',
+            'finance.refunds.view' => 'عرض المرتجعات المالية',
+            'finance.refunds.create' => 'تسجيل مرتجع مالي',
+            'deliveries.ready.view' => 'عرض الجاهز للتسليم',
+            'deliveries.list' => 'عرض سجل التسليمات',
+            'deliveries.view' => 'عرض تفاصيل التسليم',
+            'deliveries.create' => 'تسليم الأوردر',
+            'deliveries.cancel' => 'إلغاء التسليم',
+        ] as $name => $expectedLabel) {
+            $permission = Permission::where('name', $name)->firstOrFail();
+            $this->assertSame($expectedLabel, $options->get($permission->id)['label'] ?? null, $name);
+        }
+    }
+
 }

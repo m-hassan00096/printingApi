@@ -24,9 +24,17 @@ return [
         'positive_amount' => 'المبلغ يجب أن يكون أكبر من صفر',
     ],
     'permissions' => [
-        'balances.view' => 'عرض أرصدة العملاء', 'ledger.view' => 'عرض كشف حساب العميل',
-        'opening_balances.create' => 'تسجيل رصيد افتتاحي', 'collections.view' => 'عرض التحصيلات',
-        'collections.create' => 'إضافة تحصيل', 'collections.reverse' => 'عكس تحصيل',
-        'refunds.view' => 'عرض المرتجعات المالية', 'refunds.create' => 'تسجيل مرتجع مالي',
+        'balances' => ['view' => 'عرض أرصدة العملاء'],
+        'ledger' => ['view' => 'عرض كشف حساب العميل'],
+        'opening_balances' => ['create' => 'تسجيل رصيد افتتاحي'],
+        'collections' => [
+            'view' => 'عرض التحصيلات',
+            'create' => 'إضافة تحصيل',
+            'reverse' => 'عكس تحصيل',
+        ],
+        'refunds' => [
+            'view' => 'عرض المرتجعات المالية',
+            'create' => 'تسجيل مرتجع مالي',
+        ],
     ],
 ];

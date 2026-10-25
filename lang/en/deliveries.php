@@ -1,8 +1,13 @@
 <?php
 return [
     'status' => ['active' => 'Delivered', 'cancelled' => 'Cancelled'],
-    'permissions' => ['ready.view' => 'View ready orders', 'list' => 'View deliveries',
-        'view' => 'View delivery details', 'create' => 'Deliver orders', 'cancel' => 'Cancel deliveries'],
+    'permissions' => [
+        'ready' => ['view' => 'View ready orders'],
+        'list' => 'View deliveries',
+        'view' => 'View delivery details',
+        'create' => 'Deliver orders',
+        'cancel' => 'Cancel deliveries',
+    ],
     'messages' => [
         'delivered' => 'Order delivered successfully.',
         'cancelled' => 'Delivery cancelled and its collection reversed if present.',
