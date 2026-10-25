@@ -91,6 +91,22 @@ class LoginTest extends TestCase
         $this->assertDatabaseCount('personal_access_tokens', 0);
     }
 
+    public function test_untrusted_frontend_origin_cannot_attempt_session_login(): void
+    {
+        // A different host/port is not listed in SANCTUM_STATEFUL_DOMAINS.
+        $response = $this->withHeader('Origin', 'http://192.168.1.14:5174')
+            ->postJson('/api/v1/auth/login', [
+                'username' => 'test_admin',
+                'password' => self::PASSWORD,
+            ]);
+
+        $response->assertForbidden()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', __('auth.session_required'));
+
+        $this->assertGuest('web');
+    }
+
     public function test_unknown_username_is_rejected(): void
     {
         $response = $this->postJson('/api/v1/auth/login', [

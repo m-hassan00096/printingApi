@@ -3,6 +3,7 @@
 namespace Modules\Identity\Http\Controllers\Auth;
 
 use App\Helpers\ApiResponse;
+use App\Enums\HttpStatusCode;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -14,6 +15,13 @@ class LogoutController extends Controller
         Request $request,
         LogoutAction $action
     ): JsonResponse {
+        if (! $request->hasSession()) {
+            return ApiResponse::error(
+                message: __('auth.session_required'),
+                status: HttpStatusCode::FORBIDDEN,
+            );
+        }
+
         $action->execute(
             session: $request->session(),
         );

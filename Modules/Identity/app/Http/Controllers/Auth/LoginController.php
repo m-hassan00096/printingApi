@@ -3,6 +3,7 @@
 namespace Modules\Identity\Http\Controllers\Auth;
 
 use App\Helpers\ApiResponse;
+use App\Enums\HttpStatusCode;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 use Modules\Identity\Actions\Auth\LoginAction;
@@ -15,6 +16,15 @@ class LoginController extends Controller
         LoginRequest $request,
         LoginAction $action
     ): JsonResponse {
+        // The web session is installed by Sanctum only for trusted SPA Origins.
+        // Do not attempt session-based authentication when the request is stateless.
+        if (! $request->hasSession()) {
+            return ApiResponse::error(
+                message: __('auth.session_required'),
+                status: HttpStatusCode::FORBIDDEN,
+            );
+        }
+
         $user = $action->execute(
             credentials: $request->validated(),
             session: $request->session(),
