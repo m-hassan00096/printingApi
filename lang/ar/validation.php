@@ -207,7 +207,7 @@ return [
         'bank_name' => 'اسم البنك',
         'accountNumber' => 'رقم الحساب',
         'account_number' => 'رقم الحساب',
-        'phone' => 'رقم المحفظة',
+        'phone' => 'رقم الهاتف',
         'accountHolder' => 'اسم صاحب الحساب',
         'account_holder' => 'اسم صاحب الحساب',
         'paymentLink' => 'رابط الدفع',
