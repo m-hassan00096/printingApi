@@ -150,6 +150,26 @@ class SettingsSelectEndpointTest extends ParameterValueTestCase
             ->assertForbidden();
     }
 
+    public function test_customer_staff_can_use_customer_type_select_without_settings_access(): void
+    {
+        $type = $this->createValue($this->customerTypes, 'Business');
+
+        foreach (['customers.view', 'customers.create', 'customers.update'] as $permission) {
+            $this->staffRole->syncPermissions([Permission::findOrCreate($permission, 'web')]);
+            $this->loginAs($this->createStaff());
+
+            $this->getJson($this->selectsUrl('customerTypes'))
+                ->assertOk()
+                ->assertJsonPath('data.0.label', 'customerTypes')
+                ->assertJsonPath('data.0.options.0.value', $type->id)
+                ->assertJsonPath('data.0.options.0.label', 'Business');
+
+            // Customer permissions must not grant access to other Settings selects.
+            $this->getJson($this->selectsUrl('printingLocations'))
+                ->assertForbidden();
+        }
+    }
+
     public function test_settings_selects_permission_does_not_grant_management_access(): void
     {
         $value = $this->createValue($this->printingLocations, 'Visible Select');

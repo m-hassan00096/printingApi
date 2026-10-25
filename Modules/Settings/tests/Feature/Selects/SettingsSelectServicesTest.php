@@ -12,7 +12,7 @@ use Modules\Settings\Tests\Feature\ParameterValues\Support\ParameterValueTestCas
 
 class SettingsSelectServicesTest extends ParameterValueTestCase
 {
-    public function test_settings_module_registers_both_selects_with_shared_permission(): void
+    public function test_settings_module_registers_customer_types_with_scoped_access(): void
     {
         $registry = app(SelectRegistry::class);
 
@@ -25,7 +25,7 @@ class SettingsSelectServicesTest extends ParameterValueTestCase
         $this->assertSame([
             ParameterValueSelectService::class,
             'getCustomerTypes',
-            'settings.selects.view',
+            'selects.customerTypes',
         ], $registry->resolve('customerTypes'));
     }
 
