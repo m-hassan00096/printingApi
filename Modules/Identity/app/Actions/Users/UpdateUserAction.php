@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Modules\Identity\Models\User;
 use App\Services\Files\FileUploadService;
 use Modules\Identity\Services\UserRoleService;
+use Modules\Identity\Services\LastActiveAdminGuard;
 use Throwable;
 
 class UpdateUserAction
@@ -15,6 +16,7 @@ class UpdateUserAction
     public function __construct(
         private readonly UserRoleService $roles,
         private readonly FileUploadService $files,
+        private readonly LastActiveAdminGuard $adminGuard,
     ) {}
 
     public function execute(User $user, array $data): User
@@ -28,6 +30,8 @@ class UpdateUserAction
             }
 
             $updatedUser = DB::transaction(function () use ($user, $data, $newAvatarPath): User {
+                $this->adminGuard->assertCanUpdate($user, $data);
+
                 $user->fill(Arr::only($data, [
                     'name', 'username', 'phone', 'address', 'status', 'password',
                 ]));
