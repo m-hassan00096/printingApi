@@ -4,6 +4,7 @@ namespace Modules\Settings\Tests\Feature\ParameterValues;
 
 require_once __DIR__.'/Support/ParameterValueTestCase.php';
 
+use Modules\Identity\Models\Permission;
 use Modules\Settings\Tests\Feature\ParameterValues\Support\ParameterValueTestCase;
 
 class ParameterGroupIndexTest extends ParameterValueTestCase
@@ -30,7 +31,7 @@ class ParameterGroupIndexTest extends ParameterValueTestCase
 
     public function test_select_only_permission_does_not_grant_access(): void
     {
-        $this->staffRole->givePermissionTo('settings.selects.view');
+        $this->staffRole->givePermissionTo(Permission::findOrCreate('settings.selects.view', 'web'));
         $this->loginAs($this->createStaff());
         $this->getJson(self::URL)->assertForbidden();
     }
