@@ -1,0 +1,31 @@
+name: Identity Last Admin CI
+
+on:
+  push:
+    branches:
+      - fix/identity-last-admin
+  pull_request:
+    branches:
+      - develop
+
+permissions:
+  contents: read
+
+jobs:
+  identity-phpunit:
+    name: PHP 8.3 identity regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, pdo_sqlite, sqlite3, pdo_mysql
+          tools: composer:v2
+          coverage: none
+      - run: composer install --prefer-dist --no-interaction --no-progress
+      - run: |
+          cp .env.example .env
+          php artisan key:generate --force
+      - name: Run Identity tests
+        run: php artisan test Modules/Identity/tests/Feature
