@@ -4,6 +4,8 @@ use Modules\Customers\Http\Controllers\CustomerController;
 
 Route::middleware('auth:sanctum')->prefix('v1/customers')->group(function (): void {
     Route::get('/', [CustomerController::class, 'index'])->middleware('permission:customers.view');
+    Route::get('/customer-types', [CustomerController::class, 'customerTypes'])
+        ->middleware('permission:customers.view|customers.create|customers.update');
     Route::get('/{customer}', [CustomerController::class, 'show'])->middleware('permission:customers.view');
     Route::post('/', [CustomerController::class, 'store'])->middleware('permission:customers.create');
     Route::match(['put', 'patch'], '/{customer}', [CustomerController::class, 'update'])

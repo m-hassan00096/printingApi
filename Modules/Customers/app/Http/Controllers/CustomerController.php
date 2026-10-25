@@ -15,6 +15,7 @@ use Modules\Customers\Http\Resources\CustomerCollection;
 use Modules\Customers\Http\Resources\CustomerResource;
 use Modules\Customers\Models\Customer;
 use Modules\Customers\Services\CustomerQueryService;
+use Modules\Settings\Services\Selects\ParameterValueSelectService;
 
 class CustomerController extends Controller
 {
@@ -23,6 +24,11 @@ class CustomerController extends Controller
         return ApiResponse::success(
             data: (new CustomerCollection($customers->paginate($request)))->resolve($request),
         );
+    }
+
+    public function customerTypes(ParameterValueSelectService $types): JsonResponse
+    {
+        return ApiResponse::success(data: ['customerTypes' => $types->getCustomerTypes()]);
     }
 
     public function show(Customer $customer): JsonResponse
