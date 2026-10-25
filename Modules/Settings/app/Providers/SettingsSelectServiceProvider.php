@@ -20,6 +20,10 @@ class SettingsSelectServiceProvider extends ServiceProvider
             'customers.view',
             'customers.create',
             'customers.update',
+            'printing_services.view',
+            'printing_services.create',
+            'printing_services.update',
+            'printing_services.price_preview.view',
         ]));
 
         SelectRegistry::register([
