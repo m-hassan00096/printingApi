@@ -170,6 +170,29 @@ class SettingsSelectEndpointTest extends ParameterValueTestCase
         }
     }
 
+    public function test_printing_services_staff_can_access_only_customer_type_options(): void
+    {
+        $this->createValue($this->customerTypes, 'Wholesale');
+
+        foreach ([
+            'printing_services.view',
+            'printing_services.create',
+            'printing_services.update',
+            'printing_services.price_preview.view',
+        ] as $permission) {
+            $this->staffRole->syncPermissions([Permission::findOrCreate($permission, 'web')]);
+            $this->loginAs($this->createStaff());
+
+            $this->getJson($this->selectsUrl('customerTypes'))
+                ->assertOk()
+                ->assertJsonPath('data.0.label', 'customerTypes')
+                ->assertJsonPath('data.0.options.0.label', 'Wholesale');
+
+            $this->getJson($this->selectsUrl('printingLocations'))->assertForbidden();
+            $this->getJson($this->selectsUrl('bankAccounts'))->assertForbidden();
+        }
+    }
+
     public function test_settings_selects_permission_does_not_grant_management_access(): void
     {
         $value = $this->createValue($this->printingLocations, 'Visible Select');
