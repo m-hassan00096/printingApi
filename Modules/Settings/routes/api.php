@@ -4,10 +4,14 @@ use Illuminate\Support\Facades\Route;
 use Modules\Settings\Http\Controllers\BankAccountController;
 use Modules\Settings\Http\Controllers\EWalletController;
 use Modules\Settings\Http\Controllers\ParameterValueController;
+use Modules\Settings\Http\Controllers\ParameterGroupController;
 
 Route::middleware('auth:sanctum')
     ->prefix('v1/settings')
     ->group(function (): void {
+        Route::get('parameter-groups', ParameterGroupController::class)
+            ->middleware('permission:settings.view_parameter_values');
+
         Route::get('parameter-values', [ParameterValueController::class, 'index'])
             ->middleware('permission:settings.view_parameter_values');
 
