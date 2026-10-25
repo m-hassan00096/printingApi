@@ -26,6 +26,11 @@ class SettingsSelectServiceProvider extends ServiceProvider
             'printing_services.price_preview.view',
         ]));
 
+        Gate::define('selects.orders.paymentDestinations', static fn (User $user): bool => $user->canAny([
+            'settings.selects.view',
+            'orders.confirm',
+        ]));
+
         SelectRegistry::register([
             'printingLocations' => [
                 ParameterValueSelectService::class,
@@ -40,12 +45,12 @@ class SettingsSelectServiceProvider extends ServiceProvider
             'bankAccounts' => [
                 PaymentDestinationSelectService::class,
                 'getBankAccounts',
-                'settings.selects.view',
+                'selects.orders.paymentDestinations',
             ],
             'eWallets' => [
                 PaymentDestinationSelectService::class,
                 'getEWallets',
-                'settings.selects.view',
+                'selects.orders.paymentDestinations',
             ],
         ]);
     }

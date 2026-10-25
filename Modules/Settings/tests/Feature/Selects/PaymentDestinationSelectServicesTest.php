@@ -13,20 +13,20 @@ use Modules\Settings\Tests\Feature\PaymentDestinations\Support\PaymentDestinatio
 
 class PaymentDestinationSelectServicesTest extends PaymentDestinationTestCase
 {
-    public function test_bank_and_wallet_keys_are_registered_with_shared_permission(): void
+    public function test_bank_and_wallet_keys_are_registered_with_scoped_payment_selection_permission(): void
     {
         $registry = app(SelectRegistry::class);
 
         $this->assertSame([
             PaymentDestinationSelectService::class,
             'getBankAccounts',
-            'settings.selects.view',
+            'selects.orders.paymentDestinations',
         ], $registry->resolve('bankAccounts'));
 
         $this->assertSame([
             PaymentDestinationSelectService::class,
             'getEWallets',
-            'settings.selects.view',
+            'selects.orders.paymentDestinations',
         ], $registry->resolve('eWallets'));
     }
 
