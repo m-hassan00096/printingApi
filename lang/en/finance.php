@@ -17,9 +17,17 @@ return [
         'invalid_order' => 'Order does not belong to this customer', 'positive_amount' => 'Amount must be greater than zero',
     ],
     'permissions' => [
-        'balances.view' => 'View customer balances', 'ledger.view' => 'View customer ledger',
-        'opening_balances.create' => 'Create opening balance', 'collections.view' => 'View collections',
-        'collections.create' => 'Create collection', 'collections.reverse' => 'Reverse collection',
-        'refunds.view' => 'View refunds', 'refunds.create' => 'Create refund',
+        'balances' => ['view' => 'View customer balances'],
+        'ledger' => ['view' => 'View customer ledger'],
+        'opening_balances' => ['create' => 'Create opening balance'],
+        'collections' => [
+            'view' => 'View collections',
+            'create' => 'Create collection',
+            'reverse' => 'Reverse collection',
+        ],
+        'refunds' => [
+            'view' => 'View refunds',
+            'create' => 'Create refund',
+        ],
     ],
 ];
