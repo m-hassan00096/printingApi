@@ -18,6 +18,9 @@ interface ProductionOrderGateway
     /** @return array */
     public function summary(array $filters, ?Builder $myItemQuery): array;
 
+    /** Read-only and production-scoped item details (specifications and file metadata, never prices). */
+    public function itemDetails(int $itemId): ?array;
+
     /** Whether item is still a visible, confirmed item, also before showing history. */
     public function itemExists(int $itemId): bool;
 }
