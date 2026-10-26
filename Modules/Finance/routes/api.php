@@ -27,6 +27,8 @@ Route::middleware('auth:sanctum')->prefix('v1/finance')->group(function (): void
     Route::post('collections/{collection}/reverse', [CollectionController::class, 'reverse'])
         ->middleware('permission:finance.collections.reverse');
 
+    Route::get('customers/{customer}/refundable-credit', [RefundController::class, 'creditPreview'])
+        ->middleware('permission:finance.refunds.create');
     Route::get('refunds', [RefundController::class, 'index'])
         ->middleware('permission:finance.refunds.view');
     Route::post('refunds', [RefundController::class, 'store'])
