@@ -18,6 +18,20 @@ use Modules\Finance\Services\IdempotencyService;
 
 class RefundController extends Controller
 {
+    /** Advisory only: RefundService enforces available credit again under the customer lock. */
+    public function creditPreview(int $customer, LedgerService $ledger, CustomerFinanceReference $customers): JsonResponse
+    {
+        if (! $customers->exists($customer)) {
+            abort(404);
+        }
+        $cents = $ledger->cents($customer);
+        return ApiResponse::success(data: [
+            'customerId' => $customer,
+            'availableCredit' => Money::format($cents < 0 ? -$cents : 0),
+            'canRefund' => $cents < 0,
+        ]);
+    }
+
     public function index(RefundIndexRequest $request): JsonResponse
     {
         $filters = $request->validated('filter', []);
