@@ -5,6 +5,10 @@ use Modules\Finance\Http\Controllers\CollectionController;
 use Modules\Finance\Http\Controllers\RefundController;
 
 Route::middleware('auth:sanctum')->prefix('v1/finance')->group(function (): void {
+    Route::get('customer-balances', [CustomerFinanceController::class, 'accounts'])
+        ->middleware('permission:finance.balances.view');
+    Route::get('customers/{customer}/opening-balance-status', [CustomerFinanceController::class, 'openingBalanceStatus'])
+        ->middleware('permission:finance.opening_balances.create');
     Route::get('customers/{customer}/balance', [CustomerFinanceController::class, 'balance'])
         ->middleware('permission:finance.balances.view');
     Route::get('customers/{customer}/ledger', [CustomerFinanceController::class, 'ledger'])
