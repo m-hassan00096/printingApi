@@ -263,6 +263,50 @@ class FinanceApiTest extends OrdersTestCase
         $this->assertDatabaseCount('finance_ledger_entries', 3);
     }
 
+    public function test_refund_preview_tracks_credit_with_idempotent_refunds_and_blocks_insufficient_balance(): void
+    {
+        $id = $this->customer->id;
+        $this->getJson("/api/v1/finance/customers/{$id}/refundable-credit")->assertOk()
+            ->assertJsonPath('data.availableCredit', '0.00')
+            ->assertJsonPath('data.canRefund', false);
+
+        $this->withHeader('Idempotency-Key', 'refund-preview-collection')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $id, 'amount' => '320.00', 'paymentMethod' => 0,
+            ])->assertCreated();
+        $this->getJson("/api/v1/finance/customers/{$id}/refundable-credit")->assertOk()
+            ->assertJsonPath('data.availableCredit', '320.00')
+            ->assertJsonPath('data.canRefund', true);
+
+        $payload = ['customerId' => $id, 'amount' => '100.00',
+            'paymentMethod' => 0, 'reason' => 'Customer requested a partial credit refund'];
+        $first = $this->withHeader('Idempotency-Key', 'refund-preview-once')
+            ->postJson('/api/v1/finance/refunds', $payload)->assertCreated();
+        $this->withHeader('Idempotency-Key', 'refund-preview-once')
+            ->postJson('/api/v1/finance/refunds', $payload)->assertCreated()
+            ->assertJsonPath('data.id', $first->json('data.id'));
+        $this->assertDatabaseCount('finance_refunds', 1);
+        $this->assertDatabaseCount('finance_ledger_entries', 2);
+        $this->getJson("/api/v1/finance/customers/{$id}/refundable-credit")->assertOk()
+            ->assertJsonPath('data.availableCredit', '220.00');
+
+        $this->withHeader('Idempotency-Key', 'refund-preview-excess')
+            ->postJson('/api/v1/finance/refunds', [
+                'customerId' => $id, 'amount' => '221.00',
+                'paymentMethod' => 0, 'reason' => 'Exceeds available credit',
+            ])->assertStatus(409);
+        $this->assertDatabaseCount('finance_refunds', 1);
+
+        $this->adminRole->revokePermissionTo('finance.balances.view');
+        $this->adminRole->revokePermissionTo('finance.ledger.view');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->getJson("/api/v1/finance/customers/{$id}/refundable-credit")->assertOk();
+        $this->getJson("/api/v1/finance/customers/{$id}/balance")->assertForbidden();
+        $this->adminRole->revokePermissionTo('finance.refunds.create');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->getJson("/api/v1/finance/customers/{$id}/refundable-credit")->assertForbidden();
+    }
+
     public function test_refund_without_credit_returns_conflict_and_does_not_post(): void
     {
         $this->withHeader('Idempotency-Key', 'refund-zero')
