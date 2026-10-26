@@ -353,6 +353,49 @@ class ProductionApiTest extends OrdersTestCase
             ->assertJsonPath('data.notStartedCount', 1);
     }
 
+    public function test_service_filter_applies_to_board_summary_and_is_composable(): void
+    {
+        $order = $this->confirmed(['items' => [
+            ['serviceId' => $this->service->id, 'quantity' => 100, 'agreedTotal' => '100.00'],
+            ['serviceId' => $this->secondService->id, 'quantity' => 100, 'agreedTotal' => '100.00'],
+        ]]);
+        [$first, $second] = $order->items()->orderBy('id')->pluck('id')->all();
+        $path = '/api/v1/production/items?filter[serviceId]='.$this->service->id;
+        $this->getJson($path)->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.id', $first)
+            ->assertJsonPath('data.items.0.serviceId', $this->service->id);
+        $this->getJson($path.'&filter[column]=0&perPage=1')->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.id', $first);
+        $this->getJson('/api/v1/production/summary?filter[serviceId]='.$this->service->id)
+            ->assertOk()
+            ->assertJsonPath('data.notStartedCount', 1)
+            ->assertJsonPath('data.designInProgressCount', 0);
+        $this->action($second, 'start-design')->assertOk();
+        $this->getJson('/api/v1/production/summary?filter[serviceId]='.$this->secondService->id)
+            ->assertJsonPath('data.notStartedCount', 0)
+            ->assertJsonPath('data.designInProgressCount', 1);
+        $this->getJson('/api/v1/production/items?filter[serviceId]='.$this->secondService->id.'&filter[column]=1')
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.items.0.id', $second);
+        $this->getJson($path.'&filter[customerId]='.$this->secondCustomer->id)
+            ->assertJsonPath('data.pagination.total', 0);
+        $this->getJson('/api/v1/production/summary?filter[serviceId]=999999')
+            ->assertJsonPath('data.notStartedCount', 0)
+            ->assertJsonPath('data.designInProgressCount', 0);
+    }
+
+    public function test_invalid_production_service_filter_is_rejected(): void
+    {
+        foreach (['0', '-1', 'abc'] as $invalid) {
+            $this->getJson('/api/v1/production/items?filter[serviceId]='.$invalid)
+                ->assertUnprocessable()->assertJsonValidationErrors('filter.serviceId');
+            $this->getJson('/api/v1/production/summary?filter[serviceId]='.$invalid)
+                ->assertUnprocessable()->assertJsonValidationErrors('filter.serviceId');
+        }
+    }
+
     public function test_successful_idempotent_replay_survives_printer_deactivation(): void
     {
         $order = $this->confirmed();

@@ -229,6 +229,11 @@ class OrdersProductionAdapter implements ProductionOrderGateway
         if (isset($filters['customerId'])) {
             $query->whereHas('order', fn (Builder $q) => $q->where('customer_id', $filters['customerId']));
         }
+        if (isset($filters['serviceId'])) {
+            // Order items retain the exact printing service ID even if that
+            // service is subsequently disabled or soft-deleted.
+            $query->where('order_items.printing_service_id', (int) $filters['serviceId']);
+        }
         if (! empty($filters['lateOnly'])) {
             $query->whereHas('order', fn (Builder $q) => $q->whereDate('due_date', '<', $today));
         }
