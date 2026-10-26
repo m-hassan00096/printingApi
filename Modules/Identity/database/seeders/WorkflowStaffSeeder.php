@@ -39,7 +39,7 @@ class WorkflowStaffSeeder extends Seeder
             throw new RuntimeException('WorkflowStaffSeeder is permitted only in local/testing environments.');
         }
 
-        $password = (string) env('TABAA_WORKFLOW_STAFF_PASSWORD', '');
+        $password = (string) (getenv('TABAA_WORKFLOW_STAFF_PASSWORD') ?: '');
         if (strlen($password) < 8) {
             throw new RuntimeException('Set TABAA_WORKFLOW_STAFF_PASSWORD to the requested password before running this seeder.');
         }
@@ -84,6 +84,8 @@ class WorkflowStaffSeeder extends Seeder
                     ]);
                 } elseif ($user->trashed()) {
                     throw new RuntimeException("Username {$username} is soft-deleted; resolve manually rather than reassigning it.");
+                } elseif ($user->getRoleNames()->all() !== [$role]) {
+                    throw new RuntimeException("Username {$username} already exists with a different role; resolve this conflict manually.");
                 }
                 $user->syncRoles([$roles[$role]]);
             }
