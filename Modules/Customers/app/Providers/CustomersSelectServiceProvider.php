@@ -17,8 +17,13 @@ class CustomersSelectServiceProvider extends ServiceProvider
             'orders.update',
         ]));
 
+        Gate::define('selects.finance.customers', static fn (User $user): bool => $user->canAny([
+            'customers.selects.view',
+            'finance.collections.create',
+        ]));
+
         SelectRegistry::register([
-            'customers' => [CustomerSelectService::class, 'getAll', 'customers.selects.view'],
+            'customers' => [CustomerSelectService::class, 'getAll', 'selects.finance.customers'],
             'activeCustomers' => [CustomerSelectService::class, 'getActive', 'selects.orders.activeCustomers'],
         ]);
     }

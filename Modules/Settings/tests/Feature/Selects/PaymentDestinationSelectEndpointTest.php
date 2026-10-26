@@ -258,4 +258,16 @@ class PaymentDestinationSelectEndpointTest extends PaymentDestinationTestCase
             ->assertJsonPath('data.0.options', [])
             ->assertJsonPath('data.1.options', []);
     }
+    public function test_finance_collector_can_choose_payment_destinations_without_settings_management(): void
+    {
+        $this->staffRole->givePermissionTo(Permission::findOrCreate('finance.collections.create', 'web'));
+        $this->loginAs($this->staff());
+
+        $this->getJson($this->selectsUrl('bankAccounts,eWallets'))->assertOk()
+            ->assertJsonCount(2, 'data');
+        $this->getJson($this->bankUrl())->assertForbidden();
+        $this->getJson($this->walletUrl())->assertForbidden();
+        $this->getJson($this->selectsUrl('printingLocations'))->assertForbidden();
+    }
+
 }

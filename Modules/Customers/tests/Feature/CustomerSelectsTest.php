@@ -4,6 +4,9 @@ namespace Modules\Customers\Tests\Feature;
 require_once __DIR__.'/Support/CustomerTestCase.php';
 
 use Modules\Customers\Enums\CustomerStatus;
+use Modules\Identity\Models\Permission;
+use Modules\Identity\Models\User;
+use Modules\Identity\Enums\UserStatus;
 use Modules\Customers\Tests\Feature\Support\CustomerTestCase;
 
 class CustomerSelectsTest extends CustomerTestCase
@@ -34,4 +37,21 @@ class CustomerSelectsTest extends CustomerTestCase
         $this->getJson('/api/v1/selects?selects=activeCustomers&params[activeCustomers]=active')
             ->assertOk();
     }
+    public function test_finance_collector_can_select_inactive_customer_without_customer_management_permissions(): void
+    {
+        $this->customer(['name' => 'Inactive Payer', 'phone' => '01234567890', 'status' => CustomerStatus::INACTIVE]);
+        $this->staffRole->givePermissionTo(Permission::findOrCreate('finance.collections.create', 'web'));
+        $collector = User::create([
+            'name' => 'Collector', 'username' => 'finance_collector',
+            'password' => 'password123', 'status' => UserStatus::ACTIVE,
+        ]);
+        $collector->assignRole($this->staffRole);
+        $this->login($collector);
+
+        $this->getJson('/api/v1/selects?selects=customers')->assertOk()
+            ->assertJsonPath('data.0.options.0.label', 'Inactive Payer - 01234567890');
+        $this->getJson('/api/v1/selects?selects=activeCustomers')->assertForbidden();
+        $this->getJson('/api/v1/customers')->assertForbidden();
+    }
+
 }
