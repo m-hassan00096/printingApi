@@ -23,6 +23,7 @@ class CustomersSelectServiceProvider extends ServiceProvider
             'finance.balances.view',
             'finance.ledger.view',
             'finance.opening_balances.create',
+            'finance.refunds.create',
         ]));
 
         SelectRegistry::register([
