@@ -29,6 +29,7 @@ class SettingsSelectServiceProvider extends ServiceProvider
         Gate::define('selects.orders.paymentDestinations', static fn (User $user): bool => $user->canAny([
             'settings.selects.view',
             'orders.confirm',
+            'finance.collections.create',
         ]));
 
         SelectRegistry::register([
