@@ -54,6 +54,23 @@ class CustomerSelectsTest extends CustomerTestCase
         $this->getJson('/api/v1/selects?selects=activeCustomers')->assertForbidden();
     }
 
+    public function test_refund_only_staff_can_select_inactive_customers_without_customers_crud(): void
+    {
+        $this->customer(['name' => 'Credit Payer', 'phone' => '01233333333', 'status' => CustomerStatus::INACTIVE]);
+        $this->staffRole->givePermissionTo(Permission::findOrCreate('finance.refunds.create', 'web'));
+        $staff = User::create([
+            'name' => 'Refund Clerk', 'username' => 'refund_clerk',
+            'password' => 'password123', 'status' => UserStatus::ACTIVE,
+        ]);
+        $staff->assignRole($this->staffRole);
+        $this->login($staff);
+
+        $this->getJson('/api/v1/selects?selects=customers')->assertOk()
+            ->assertJsonPath('data.0.options.0.label', 'Credit Payer - 01233333333');
+        $this->getJson('/api/v1/customers')->assertForbidden();
+        $this->getJson('/api/v1/selects?selects=activeCustomers')->assertForbidden();
+    }
+
     public function test_finance_collector_can_select_inactive_customer_without_customer_management_permissions(): void
     {
         $this->customer(['name' => 'Inactive Payer', 'phone' => '01234567890', 'status' => CustomerStatus::INACTIVE]);
