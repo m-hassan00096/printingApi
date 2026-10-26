@@ -25,6 +25,9 @@ class Order extends Model
             'production_status' => OrderProductionStatus::class,
             'due_date' => 'date:Y-m-d',
             'total_amount' => 'decimal:2',
+            'planned_deposit_amount' => 'decimal:2',
+            'planned_payment_method' => 'integer',
+            'planned_payment_destination_id' => 'integer',
             'confirmed_at' => 'datetime', 'cancelled_at' => 'datetime', 'delivered_at' => 'datetime',
             'delivered_local_date' => 'date:Y-m-d',
         ];

@@ -39,6 +39,11 @@ class OrderConfirmationService
             $locked->status = OrderStatus::CONFIRMED;
             $locked->production_status = OrderProductionStatus::NOT_STARTED;
             $locked->confirmed_at = now();
+            // Draft payment is intent only; confirmed finance entries are sourced
+            // solely from this confirmation request.
+            $locked->planned_deposit_amount = null;
+            $locked->planned_payment_method = null;
+            $locked->planned_payment_destination_id = null;
             $locked->save();
 
             $this->activities->record($locked, 'order_confirmed', [
