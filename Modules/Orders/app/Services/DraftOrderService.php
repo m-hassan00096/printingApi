@@ -30,6 +30,9 @@ class DraftOrderService
             $order->due_date = $data['dueDate'] ?? null;
             $order->notes = $data['notes'] ?? null;
             $order->total_amount = '0.00';
+            $order->planned_deposit_amount = $data['plannedDepositAmount'] ?? null;
+            $order->planned_payment_method = $data['plannedPaymentMethod'] ?? null;
+            $order->planned_payment_destination_id = $data['plannedPaymentDestinationId'] ?? null;
             $order->save();
 
             foreach ($data['items'] as $line) {
@@ -73,6 +76,13 @@ class DraftOrderService
 
             if (array_key_exists('notes', $data)) {
                 $locked->notes = $data['notes'];
+            }
+
+            if (array_key_exists('plannedDepositAmount', $data)) {
+                $locked->planned_deposit_amount = $data['plannedDepositAmount'];
+                $locked->planned_payment_method = $data['plannedPaymentMethod'] ?? null;
+                $locked->planned_payment_destination_id = $data['plannedPaymentDestinationId'] ?? null;
+                $changes['plannedPayment'] = 'updated';
             }
 
             $locked->save();
