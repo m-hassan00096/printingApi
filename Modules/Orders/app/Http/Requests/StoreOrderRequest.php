@@ -8,6 +8,7 @@ use Illuminate\Validation\Rule;
 use Modules\Orders\Enums\OrderSource;
 use Modules\Orders\Enums\OrderStatus;
 use Modules\Orders\Http\Requests\Concerns\RejectsUnknownFields;
+use Modules\Orders\Http\Requests\Concerns\ValidatesDraftPaymentPlan;
 use Modules\Orders\Http\Requests\Concerns\ValidatesOrderDeposit;
 
 class StoreOrderRequest extends FormRequest
