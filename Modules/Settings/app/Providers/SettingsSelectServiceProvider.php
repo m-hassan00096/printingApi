@@ -30,6 +30,7 @@ class SettingsSelectServiceProvider extends ServiceProvider
             'settings.selects.view',
             'orders.confirm',
             'finance.collections.create',
+            'finance.refunds.create',
         ]));
 
         SelectRegistry::register([
