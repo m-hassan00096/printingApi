@@ -20,6 +20,9 @@ class CustomersSelectServiceProvider extends ServiceProvider
         Gate::define('selects.finance.customers', static fn (User $user): bool => $user->canAny([
             'customers.selects.view',
             'finance.collections.create',
+            'finance.balances.view',
+            'finance.ledger.view',
+            'finance.opening_balances.create',
         ]));
 
         SelectRegistry::register([
