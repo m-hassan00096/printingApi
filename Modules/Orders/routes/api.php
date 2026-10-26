@@ -3,9 +3,14 @@
 use Illuminate\Support\Facades\Route;
 use Modules\Orders\Http\Controllers\OrderActivityController;
 use Modules\Orders\Http\Controllers\OrderController;
+use Modules\Orders\Http\Controllers\DashboardController;
 use Modules\Orders\Http\Controllers\OrderFileController;
 use Modules\Orders\Http\Controllers\OrderFinanceController;
 use Modules\Orders\Http\Controllers\OrderItemController;
+
+// Dashboard is intentionally restricted to orders.list; other sections are linked only by client permissions.
+Route::get('v1/dashboard', DashboardController::class)
+    ->middleware(['auth:sanctum', 'permission:orders.list']);
 
 Route::middleware('auth:sanctum')->prefix('v1/orders')->group(function (): void {
     Route::get('/', [OrderController::class, 'index'])->middleware('permission:orders.list');
