@@ -66,6 +66,35 @@ class ProductionApiTest extends OrdersTestCase
         $this->action($id, 'send-to-printing', ['printingLocationId' => $this->printer->id])->assertOk();
     }
 
+    public function test_item_details_expose_specifications_without_order_prices_and_require_production_access(): void
+    {
+        $order = $this->confirmed();
+        $id = $this->item($order);
+        $this->getJson("/api/v1/production/items/$id/details")->assertOk()
+            ->assertJsonPath('data.id', $id)
+            ->assertJsonPath('data.orderId', $order->id)
+            ->assertJsonPath('data.quantity', 100)
+            ->assertJsonPath('data.specifications', 'Glossy double-sided')
+            ->assertJsonCount(0, 'data.files')
+            ->assertJsonMissingPath('data.agreedTotal')
+            ->assertJsonMissingPath('data.unitPrice')
+            ->assertJsonMissingPath('data.totalAmount');
+
+        $staff = User::create(['name' => 'Designer', 'username' => 'production_only_test',
+            'password' => 'password123', 'status' => UserStatus::ACTIVE]);
+        $staff->assignRole($this->staffRole);
+        $this->staffRole->givePermissionTo(Permission::findOrCreate('production.items.list', 'web'));
+        $this->login($staff);
+        $this->getJson("/api/v1/production/items/$id/details")->assertOk()
+            ->assertJsonPath('data.specifications', 'Glossy double-sided');
+        $this->getJson($this->path($order))->assertForbidden();
+        $this->postJson("/api/v1/deliveries/orders/{$order->id}/deliver")->assertForbidden();
+
+        $this->staffRole->revokePermissionTo('production.items.list');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->getJson("/api/v1/production/items/$id/details")->assertForbidden();
+    }
+
     public function test_design_can_finish_in_place_and_requires_printer_on_send(): void
     {
         $order = $this->confirmed();
