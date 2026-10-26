@@ -31,6 +31,11 @@ class ProductionItemController extends Controller
         ));
     }
 
+    public function details(int $orderItem, ProductionQueryService $query): JsonResponse
+    {
+        return ApiResponse::success(data: $query->details($orderItem));
+    }
+
     public function history(int $orderItem, ProductionHistoryRequest $request, ProductionQueryService $query): JsonResponse
     {
         return ApiResponse::success(data: $query->history(
