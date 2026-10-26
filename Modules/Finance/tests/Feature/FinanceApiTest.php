@@ -48,6 +48,95 @@ class FinanceApiTest extends OrdersTestCase
         $this->assertDatabaseCount('finance_ledger_entries', 1);
     }
 
+    public function test_customer_balance_overview_is_paginated_aggregated_and_opening_aware(): void
+    {
+        $id = $this->customer->id;
+        $other = $this->secondCustomer->id;
+        $this->secondCustomer->update(['status' => CustomerStatus::INACTIVE]);
+        $this->postJson("/api/v1/finance/customers/{$id}/opening-balance", [
+            'amount' => '1200.00', 'type' => 1,
+        ])->assertCreated();
+        $this->withHeader('Idempotency-Key', 'overview-collect')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $id, 'amount' => '300.00', 'paymentMethod' => 0,
+            ])->assertCreated();
+        $this->withHeader('Idempotency-Key', 'overview-inactive-credit')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $other, 'amount' => '25.50', 'paymentMethod' => 0,
+            ])->assertCreated();
+
+        $this->getJson('/api/v1/finance/customer-balances?perPage=1&sort=-balance')->assertOk()
+            ->assertJsonPath('data.pagination.total', 2)
+            ->assertJsonPath('data.accounts.0.customerId', $id)
+            ->assertJsonPath('data.accounts.0.amount', '900.00')
+            ->assertJsonPath('data.accounts.0.type', 1)
+            ->assertJsonPath('data.accounts.0.openingBalanceExists', true);
+
+        $this->getJson('/api/v1/finance/customer-balances?filter[type]=2')->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.accounts.0.customerId', $other)
+            ->assertJsonPath('data.accounts.0.amount', '25.50')
+            ->assertJsonPath('data.accounts.0.openingBalanceExists', false);
+        $this->getJson('/api/v1/finance/customer-balances?filter[search]=0112222')
+            ->assertOk()->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.accounts.0.customerId', $other);
+        $this->getJson('/api/v1/finance/customer-balances?filter[type]=99')
+            ->assertUnprocessable()->assertJsonValidationErrors('filter.type');
+        $this->getJson('/api/v1/finance/customer-balances?filter[dateFrom]=2026-10-26')
+            ->assertUnprocessable()->assertJsonValidationErrors('filter');
+
+        $this->getJson("/api/v1/finance/customers/{$id}/opening-balance-status")->assertOk()
+            ->assertJsonPath('data.openingBalanceExists', true);
+        $this->getJson("/api/v1/finance/customers/{$other}/opening-balance-status")->assertOk()
+            ->assertJsonPath('data.openingBalanceExists', false);
+        $this->getJson("/api/v1/finance/customers/{$id}/balance")->assertOk()
+            ->assertJsonPath('data.openingBalanceExists', true);
+    }
+
+    public function test_ledger_running_balance_stays_unfiltered_across_pages_and_reversals(): void
+    {
+        $id = $this->customer->id;
+        $this->postJson("/api/v1/finance/customers/{$id}/opening-balance", [
+            'amount' => '1000.00', 'type' => 1,
+        ])->assertCreated();
+        $first = $this->withHeader('Idempotency-Key', 'run-first')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $id, 'amount' => '200.00', 'paymentMethod' => 0,
+            ])->assertCreated();
+        $second = $this->withHeader('Idempotency-Key', 'run-second')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $id, 'amount' => '50.00', 'paymentMethod' => 0,
+            ])->assertCreated();
+        $this->withHeader('Idempotency-Key', 'run-reversal')
+            ->postJson('/api/v1/finance/collections/'.$second->json('data.id').'/reverse', [
+                'reason' => 'Mistaken collection',
+            ])->assertOk();
+
+        $this->getJson("/api/v1/finance/customers/{$id}/ledger?filter[type]=2&perPage=1&page=1")->assertOk()
+            ->assertJsonPath('data.pagination.total', 2)
+            ->assertJsonPath('data.entries.0.amount', '50.00')
+            ->assertJsonPath('data.entries.0.runningBalance.amount', '750.00')
+            ->assertJsonPath('data.entries.0.runningBalance.type', 1)
+            ->assertJsonPath('data.openingBalanceExists', true);
+        $this->getJson("/api/v1/finance/customers/{$id}/ledger?filter[type]=2&perPage=1&page=2")->assertOk()
+            ->assertJsonPath('data.entries.0.amount', '200.00')
+            ->assertJsonPath('data.entries.0.runningBalance.amount', '800.00');
+        $this->getJson("/api/v1/finance/customers/{$id}/ledger?perPage=1&page=1")->assertOk()
+            ->assertJsonPath('data.entries.0.type', 4)
+            ->assertJsonPath('data.entries.0.runningBalance.amount', '800.00')
+            ->assertJsonPath('data.balance.amount', '800.00');
+    }
+
+    public function test_account_overview_and_opening_eligibility_have_separate_permissions(): void
+    {
+        $this->adminRole->revokePermissionTo('finance.balances.view');
+        $this->adminRole->revokePermissionTo('finance.opening_balances.create');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->getJson('/api/v1/finance/customer-balances')->assertForbidden();
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id.'/opening-balance-status')
+            ->assertForbidden();
+    }
+
     public function test_cash_collection_overpayment_becomes_credit_automatically_and_is_idempotent(): void
     {
         $payload = ['customerId' => $this->customer->id, 'amount' => '4000.00', 'paymentMethod' => 0];
