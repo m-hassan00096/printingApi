@@ -215,6 +215,31 @@ class OrdersProductionAdapter implements ProductionOrderGateway
         ];
     }
 
+    public function itemDetails(int $itemId): ?array
+    {
+        $item = OrderItem::query()
+            ->with('files')
+            ->whereKey($itemId)
+            ->whereHas('order', fn (Builder $query) => $query
+                ->where('status', OrderStatus::CONFIRMED->value)
+                ->whereNull('delivered_at'))
+            ->first();
+        if ($item === null) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $item->id,
+            'orderId' => (int) $item->order_id,
+            'serviceName' => $item->service_name_snapshot,
+            'quantity' => (int) $item->quantity,
+            'specifications' => $item->specifications,
+            'files' => \Modules\Orders\Http\Resources\OrderItemFileResource::collection(
+                $item->files->sortByDesc('id'),
+            )->resolve(request()),
+        ];
+    }
+
     public function itemExists(int $itemId): bool
     {
         return OrderItem::query()->whereKey($itemId)->whereHas('order',

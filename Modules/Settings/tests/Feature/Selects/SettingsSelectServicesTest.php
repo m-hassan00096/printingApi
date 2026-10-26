@@ -19,7 +19,7 @@ class SettingsSelectServicesTest extends ParameterValueTestCase
         $this->assertSame([
             ParameterValueSelectService::class,
             'getPrintingLocations',
-            'settings.selects.view',
+            'selects.production.printingLocations',
         ], $registry->resolve('printingLocations'));
 
         $this->assertSame([

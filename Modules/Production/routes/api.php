@@ -7,6 +7,8 @@ Route::middleware('auth:sanctum')->prefix('v1/production')->group(function (): v
     Route::get('/summary', [Items::class, 'summary'])->middleware('permission:production.summary.view');
     Route::post('/items/send-to-printing', [Items::class, 'sendBatch'])->middleware('permission:production.printing.send');
 
+    Route::get('/items/{orderItem}/details', [Items::class, 'details'])
+        ->whereNumber('orderItem')->middleware('permission:production.items.list');
     Route::get('/items/{orderItem}/history', [Items::class, 'history'])
         ->whereNumber('orderItem')->middleware('permission:production.history.view');
     Route::post('/items/{orderItem}/start-design', [Items::class, 'startDesign'])

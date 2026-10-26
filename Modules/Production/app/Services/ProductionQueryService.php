@@ -55,6 +55,11 @@ class ProductionQueryService
         return $this->orders->summary($filters, $this->myItems($filters, $actorId));
     }
 
+    public function details(int $itemId): array
+    {
+        return $this->orders->itemDetails($itemId) ?? abort(404);
+    }
+
     public function history(int $itemId, int $page, int $perPage): array
     {
         abort_unless($this->orders->itemExists($itemId), 404);

@@ -33,11 +33,16 @@ class SettingsSelectServiceProvider extends ServiceProvider
             'finance.refunds.create',
         ]));
 
+        Gate::define('selects.production.printingLocations', static fn (User $user): bool => $user->canAny([
+            'settings.selects.view',
+            'production.items.list',
+        ]));
+
         SelectRegistry::register([
             'printingLocations' => [
                 ParameterValueSelectService::class,
                 'getPrintingLocations',
-                'settings.selects.view',
+                'selects.production.printingLocations',
             ],
             'customerTypes' => [
                 ParameterValueSelectService::class,
