@@ -17,7 +17,8 @@ class DashboardApiTest extends OrdersTestCase
 {
     private function confirmed(string $due, OrderProductionStatus $production, OrderItemStage $stage)
     {
-        $order = $this->draft(['dueDate' => $due]);
+        $order = $this->draft(['dueDate' => now('Africa/Cairo')->addDays(5)->toDateString()]);
+        $order->due_date = $due;
         $order->status = OrderStatus::CONFIRMED;
         $order->production_status = $production;
         $order->confirmed_at = now();
@@ -35,7 +36,7 @@ class DashboardApiTest extends OrdersTestCase
             $late = $this->confirmed('2026-10-24', OrderProductionStatus::IN_PRODUCTION, OrderItemStage::PRINTING);
             $today = $this->confirmed('2026-10-26', OrderProductionStatus::READY_FOR_DELIVERY, OrderItemStage::READY_FOR_DELIVERY);
             $this->confirmed('2026-10-28', OrderProductionStatus::IN_PRODUCTION, OrderItemStage::DESIGN_IN_PROGRESS);
-            $this->draft(['dueDate' => '2026-10-20']);
+            $this->draft(['dueDate' => '2026-11-20']);
 
             $delivered = $this->confirmed('2026-10-20', OrderProductionStatus::DELIVERED, OrderItemStage::READY_FOR_DELIVERY);
             $delivered->delivered_at = now();
