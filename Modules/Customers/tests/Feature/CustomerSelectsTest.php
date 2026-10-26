@@ -37,6 +37,23 @@ class CustomerSelectsTest extends CustomerTestCase
         $this->getJson('/api/v1/selects?selects=activeCustomers&params[activeCustomers]=active')
             ->assertOk();
     }
+    public function test_finance_ledger_only_staff_can_select_customers_but_not_manage_them(): void
+    {
+        $this->customer(['name' => 'Account Payer', 'phone' => '01211111111', 'status' => CustomerStatus::INACTIVE]);
+        $this->staffRole->givePermissionTo(Permission::findOrCreate('finance.ledger.view', 'web'));
+        $staff = User::create([
+            'name' => 'Accounts Clerk', 'username' => 'accounts_clerk',
+            'password' => 'password123', 'status' => UserStatus::ACTIVE,
+        ]);
+        $staff->assignRole($this->staffRole);
+        $this->login($staff);
+
+        $this->getJson('/api/v1/selects?selects=customers')->assertOk()
+            ->assertJsonPath('data.0.options.0.label', 'Account Payer - 01211111111');
+        $this->getJson('/api/v1/customers')->assertForbidden();
+        $this->getJson('/api/v1/selects?selects=activeCustomers')->assertForbidden();
+    }
+
     public function test_finance_collector_can_select_inactive_customer_without_customer_management_permissions(): void
     {
         $this->customer(['name' => 'Inactive Payer', 'phone' => '01234567890', 'status' => CustomerStatus::INACTIVE]);
