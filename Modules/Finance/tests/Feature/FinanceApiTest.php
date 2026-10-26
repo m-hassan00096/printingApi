@@ -4,6 +4,7 @@ namespace Modules\Finance\Tests\Feature;
 require_once __DIR__.'/../../../Orders/tests/Feature/Support/OrdersTestCase.php';
 
 use Illuminate\Support\Str;
+use Modules\Customers\Enums\CustomerStatus;
 use Modules\Finance\Models\Collection;
 use Modules\Finance\Models\LedgerEntry;
 use Modules\Identity\Models\Permission;
@@ -79,6 +80,55 @@ class FinanceApiTest extends OrdersTestCase
         $this->withHeader('Idempotency-Key', 'reverse-2')
             ->postJson('/api/v1/finance/collections/'.$collectionId.'/reverse', ['reason' => 'Another attempt'])
             ->assertStatus(409);
+    }
+
+    public function test_inactive_customer_old_debt_partial_collection_overpayment_and_reversal_are_consistent(): void
+    {
+        // An inactive customer may settle old debts, but cannot place new orders.
+        $this->customer->update(['status' => CustomerStatus::INACTIVE]);
+        $customerId = $this->customer->id;
+
+        $this->postJson("/api/v1/finance/customers/{$customerId}/opening-balance", [
+            'type' => 1, 'amount' => '1250.00',
+        ])->assertCreated();
+
+        $firstPayload = ['customerId' => $customerId, 'amount' => '500.00', 'paymentMethod' => 0];
+        $first = $this->withHeader('Idempotency-Key', 'inactive-old-debt-partial')
+            ->postJson('/api/v1/finance/collections', $firstPayload)->assertCreated();
+        $this->getJson("/api/v1/finance/customers/{$customerId}/balance")->assertOk()
+            ->assertJsonPath('data.type', 1)->assertJsonPath('data.amount', '750.00');
+
+        // The second general collection settles the rest and leaves a 150.00 credit.
+        $overpayPayload = ['customerId' => $customerId, 'amount' => '900.00', 'paymentMethod' => 0];
+        $overpay = $this->withHeader('Idempotency-Key', 'inactive-old-debt-overpay')
+            ->postJson('/api/v1/finance/collections', $overpayPayload)->assertCreated();
+        $receiptId = $overpay->json('data.id');
+
+        $this->withHeader('Idempotency-Key', 'inactive-old-debt-overpay')
+            ->postJson('/api/v1/finance/collections', $overpayPayload)->assertCreated()
+            ->assertJsonPath('data.id', $receiptId);
+        $this->assertDatabaseCount('finance_collections', 2);
+        $this->getJson("/api/v1/finance/customers/{$customerId}/balance")->assertOk()
+            ->assertJsonPath('data.type', 2)->assertJsonPath('data.amount', '150.00');
+
+        $this->withHeader('Idempotency-Key', 'inactive-old-debt-reverse')
+            ->postJson('/api/v1/finance/collections/'.$receiptId.'/reverse', ['reason' => 'Duplicate receipt'])
+            ->assertOk();
+        $this->withHeader('Idempotency-Key', 'inactive-old-debt-reverse')
+            ->postJson('/api/v1/finance/collections/'.$receiptId.'/reverse', ['reason' => 'Duplicate receipt'])
+            ->assertOk();
+        $this->getJson("/api/v1/finance/customers/{$customerId}/balance")->assertOk()
+            ->assertJsonPath('data.type', 1)->assertJsonPath('data.amount', '750.00');
+        $this->getJson('/api/v1/finance/collections/summary')->assertOk()
+            ->assertJsonPath('data.totalCollected', '500.00')
+            ->assertJsonPath('data.collectionsCount', 1);
+        $this->assertDatabaseCount('finance_ledger_entries', 4);
+        $this->assertDatabaseHas('finance_collections', [
+            'id' => $first->json('data.id'), 'status' => 1,
+        ]);
+        $this->assertDatabaseHas('finance_collections', [
+            'id' => $receiptId, 'status' => 2,
+        ]);
     }
 
     public function test_refund_is_limited_by_credit_and_requires_reason(): void
