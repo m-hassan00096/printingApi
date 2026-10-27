@@ -120,6 +120,43 @@ class OrderFileArchiveTest extends OrdersTestCase
         ]);
     }
 
+    public function test_file_audit_detects_an_interrupted_move_without_modifying_any_file(): void
+    {
+        $order = $this->draft();
+        $item = $order->items()->firstOrFail();
+        $file = $this->upload($order, $item, 'crash.pdf', '%PDF-1.7 crash scenario');
+
+        // Simulate a hard crash after moving the bytes, before updating the DB.
+        Storage::disk('local')->put($file->path, Storage::disk('public')->get($file->path));
+        Storage::disk('public')->delete($file->path);
+
+        $this->artisan('orders:audit-files')->assertExitCode(1);
+        $this->assertSame('public', $file->fresh()->disk);
+        Storage::disk('public')->assertMissing($file->path);
+        Storage::disk('local')->assertExists($file->path);
+
+        // After an operator restores the file, audit passes. Audit itself never repairs.
+        Storage::disk('public')->put($file->path, Storage::disk('local')->get($file->path));
+        Storage::disk('local')->delete($file->path);
+        $this->artisan('orders:audit-files')->assertExitCode(0);
+    }
+
+    public function test_file_audit_identifies_missing_and_duplicate_copies(): void
+    {
+        $order = $this->draft();
+        $item = $order->items()->firstOrFail();
+        $file = $this->upload($order, $item, 'original.pdf', '%PDF-1.7 double copy');
+
+        Storage::disk('local')->put($file->path, 'unapproved duplicate');
+        $this->artisan('orders:audit-files')->assertExitCode(1);
+        $this->assertSame('unapproved duplicate', Storage::disk('local')->get($file->path));
+
+        Storage::disk('public')->delete($file->path);
+        Storage::disk('local')->delete($file->path);
+        $this->artisan('orders:audit-files')->assertExitCode(1);
+        $this->assertSame('public', $file->fresh()->disk);
+    }
+
     public function test_private_destination_collision_is_rejected_without_overwriting_files(): void
     {
         $order = $this->draft();
