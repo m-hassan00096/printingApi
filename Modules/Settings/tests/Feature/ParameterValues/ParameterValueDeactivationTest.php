@@ -6,9 +6,7 @@ require_once __DIR__.'/Support/ParameterValueTestCase.php';
 
 use App\Enums\HttpStatusCode;
 use App\Exceptions\BusinessException;
-use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
 use Modules\Settings\Contracts\ParameterValueDeactivationGuard;
 use Modules\Settings\Enums\ParameterValueStatus;
@@ -23,10 +21,9 @@ class ParameterValueDeactivationTest extends ParameterValueTestCase
     {
         parent::setUp();
 
-        Schema::create('test_current_customers', function (Blueprint $table): void {
-            $table->id();
-            $table->foreignId('customer_type_id');
-        });
+        // A test-only in-memory guard avoids MySQL DDL implicit commits
+        // inside the RefreshDatabase transaction (and lost SAVEPOINTs).
+        FakeCurrentCustomerGuard::reset();
 
         // Simulates the future Customers module without creating its tables
         // or introducing a production dependency into Settings.
@@ -37,7 +34,7 @@ class ParameterValueDeactivationTest extends ParameterValueTestCase
     public function test_active_customer_type_in_use_cannot_be_deactivated_and_update_rolls_back(): void
     {
         $type = $this->createValue($this->customerTypes, 'Wholesale');
-        DB::table('test_current_customers')->insert(['customer_type_id' => $type->id]);
+        FakeCurrentCustomerGuard::markInUse($type->id);
 
         $this->patchJson($this->url($type), [
             'name' => 'Renamed Wholesale',
@@ -60,7 +57,7 @@ class ParameterValueDeactivationTest extends ParameterValueTestCase
     public function test_other_settings_groups_are_unaffected(): void
     {
         $location = $this->createValue($this->printingLocations, 'Main Printer');
-        DB::table('test_current_customers')->insert(['customer_type_id' => $location->id]);
+        FakeCurrentCustomerGuard::markInUse($location->id);
 
         $this->patchJson($this->url($location), ['status' => 0])
             ->assertOk()->assertJsonPath('data.status', 0);
@@ -69,7 +66,7 @@ class ParameterValueDeactivationTest extends ParameterValueTestCase
     public function test_renaming_does_not_trigger_deactivation_checks(): void
     {
         $type = $this->createValue($this->customerTypes, 'Wholesale');
-        DB::table('test_current_customers')->insert(['customer_type_id' => $type->id]);
+        FakeCurrentCustomerGuard::markInUse($type->id);
 
         $this->patchJson($this->url($type), ['name' => 'Business'])
             ->assertOk()->assertJsonPath('data.name', 'Business');
@@ -80,7 +77,7 @@ class ParameterValueDeactivationTest extends ParameterValueTestCase
         $type = $this->createValue($this->customerTypes, 'Wholesale');
         $type->status = ParameterValueStatus::INACTIVE;
         $type->save();
-        DB::table('test_current_customers')->insert(['customer_type_id' => $type->id]);
+        FakeCurrentCustomerGuard::markInUse($type->id);
 
         $this->patchJson($this->url($type), ['status' => 1])
             ->assertOk()->assertJsonPath('data.status', 1);
@@ -110,15 +107,26 @@ class ParameterValueDeactivationTest extends ParameterValueTestCase
  */
 class FakeCurrentCustomerGuard implements ParameterValueDeactivationGuard
 {
+    /** @var list<int> */
+    private static array $inUse = [];
+
+    public static function reset(): void
+    {
+        self::$inUse = [];
+    }
+
+    public static function markInUse(int $typeId): void
+    {
+        self::$inUse[] = $typeId;
+    }
+
     public function assertCanDeactivate(ParameterValue $value): void
     {
         if ($value->parameter()->value('name') !== 'customer_types') {
             return;
         }
 
-        if (DB::table('test_current_customers')
-            ->where('customer_type_id', $value->id)
-            ->exists()) {
+        if (in_array((int) $value->id, self::$inUse, true)) {
             throw new FakeCurrentCustomerInUseException();
         }
     }
