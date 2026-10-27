@@ -85,11 +85,13 @@ class CollectionController extends Controller
         if (isset($filters['status'])) $q->where('status', $filters['status']);
         if (! empty($filters['search'])) {
             $needle = $filters['search'];
+            $escapedNeedle = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $needle);
+            $like = '%'.$escapedNeedle.'%';
             $matchingOrders = app(OrderFinanceReference::class)->findOrderIdsByNumber($needle);
-            $q->where(function ($where) use ($needle, $matchingOrders): void {
-                $where->where('receipt_number', 'like', '%'.$needle.'%')
-                    ->orWhere('customer_name_snapshot', 'like', '%'.$needle.'%')
-                    ->orWhere('customer_phone_snapshot', 'like', '%'.$needle.'%');
+            $q->where(function ($where) use ($like, $matchingOrders): void {
+                $where->whereRaw("receipt_number LIKE ? ESCAPE '!'", [$like])
+                    ->orWhereRaw("customer_name_snapshot LIKE ? ESCAPE '!'", [$like])
+                    ->orWhereRaw("customer_phone_snapshot LIKE ? ESCAPE '!'", [$like]);
                 if ($matchingOrders !== []) $where->orWhereIn('order_id', $matchingOrders);
             });
         }
