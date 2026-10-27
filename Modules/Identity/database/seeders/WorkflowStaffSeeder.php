@@ -22,7 +22,7 @@ class WorkflowStaffSeeder extends Seeder
         'production.items.list', 'production.summary.view', 'production.history.view',
         'production.design.start', 'production.design.complete',
         'production.printing.send', 'production.printing.change_location',
-        'production.printing.complete',
+        'production.printing.complete', 'production.items.undo',
         'customers.selects.view', 'printing_services.selects.view',
     ];
 
