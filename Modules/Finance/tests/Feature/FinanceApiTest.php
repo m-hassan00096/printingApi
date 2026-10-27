@@ -424,6 +424,24 @@ class FinanceApiTest extends OrdersTestCase
         $this->assertDatabaseCount('finance_ledger_entries', 0);
     }
 
+    public function test_collection_search_treats_like_wildcards_as_literal_text(): void
+    {
+        $this->withHeader('Idempotency-Key', 'literal-search-fixture')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $this->customer->id, 'amount' => '10.00', 'paymentMethod' => 0,
+            ])->assertCreated();
+
+        // '%' and '_' must not match arbitrary receipt or customer characters.
+        foreach (['%', '_', '!'] as $value) {
+            $response = $this->getJson('/api/v1/finance/collections?'.http_build_query([
+                'filter' => ['search' => $value],
+            ]))->assertOk();
+            $this->assertSame(0, $response->json('data.pagination.total'));
+        }
+        $this->getJson('/api/v1/finance/collections?filter[search]=COL-')
+            ->assertOk()->assertJsonPath('data.pagination.total', 1);
+    }
+
     public function test_each_finance_index_accepts_only_its_own_filters(): void
     {
         $this->getJson('/api/v1/finance/collections?filter[type]=1')
