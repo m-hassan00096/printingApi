@@ -70,7 +70,11 @@ jobs:
           for module in Identity Settings PrintingServices Customers Orders Production Deliveries Finance; do
             echo "::group::MySQL feature tests: $module"
             php artisan migrate:fresh --force
-            php artisan test "Modules/$module/tests/Feature"
+            php artisan test "Modules/$module/tests/Feature" --filter='^(?!.*MySql)'
+            while IFS= read -r file; do
+              php artisan migrate:fresh --force
+              php artisan test "$file"
+            done < <(find "Modules/$module/tests/Feature" -type f -name 'MySql*Test.php' | sort)
             echo "::endgroup::"
           done
       - name: Validate file-storage consistency command on a clean test database
