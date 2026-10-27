@@ -27,7 +27,7 @@ class StoreCustomerRequest extends FormRequest
             'name' => ['required', 'string', 'max:150'],
             'phone' => ['required', 'string', 'max:100', $this->uniquePhoneRule()],
             'address' => ['sometimes', 'nullable', 'string', 'max:1000'],
-            'customerTypeId' => ['required', 'integer', $this->customerTypeRule()],
+            'customerTypeId' => ['sometimes', 'nullable', 'integer', $this->customerTypeRule()],
             'status' => ['required', 'integer', Rule::enum(CustomerStatus::class)],
         ];
     }

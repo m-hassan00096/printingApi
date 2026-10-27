@@ -37,27 +37,20 @@ class PriceResolver
             }
         }
 
-        if ($tier === null) {
+        // Unclassified customers deliberately use the service base price.
+        // Classified customers preserve the existing generic-tier fallback.
+        if ($customerTypeId !== null && $tier === null) {
             $tier = $this->constrained($service, null, $quantity);
             $source = $tier ? 'genericQuantityTier' : null;
         }
 
-        if ($tier === null) {
+        if ($customerTypeId !== null && $tier === null) {
             $tier = $this->catchAll($service, null);
             $source = $tier ? 'genericCatchAll' : null;
         }
 
-        $price = $tier?->price ?? $service->base_price;
-        if ($price === null) {
-            return [
-                'serviceId' => $service->id,
-                'quantity' => $quantity,
-                'source' => null,
-                'suggestedUnitPrice' => null,
-                'suggestedTotal' => null,
-                'requiresManualTotal' => true,
-            ];
-        }
+        // A missing base price is shown and suggested as zero, not manual.
+        $price = $tier?->price ?? $service->base_price ?? '0.00';
 
         return [
             'serviceId' => $service->id,
