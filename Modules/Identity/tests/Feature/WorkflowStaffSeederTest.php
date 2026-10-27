@@ -95,6 +95,7 @@ class WorkflowStaffSeederTest extends TestCase
         $this->assertFalse($user->can('orders.view'));
         $this->assertFalse($user->can('deliveries.create'));
         $this->assertTrue($user->can('production.printing.complete'));
+        $this->assertTrue($user->can('production.items.undo'));
     }
 
     public function test_reception_can_read_customers_orders_deliveries_collections_but_not_modify_them(): void
