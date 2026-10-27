@@ -16,7 +16,7 @@ class IndexOrdersRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'filter' => ['sometimes', 'array:search,status,productionStatus,lateOnly,openOnly'],
+            'filter' => ['sometimes', 'array:search,status,productionStatus,lateOnly,openOnly,createdFrom,createdTo'],
             'filter.search' => ['sometimes', 'nullable', 'string', 'max:255'],
             'filter.status' => ['sometimes', 'nullable', 'integer', Rule::enum(OrderStatus::class)],
             'filter.productionStatus' => [
@@ -24,6 +24,8 @@ class IndexOrdersRequest extends FormRequest
             ],
             'filter.lateOnly' => ['sometimes', 'in:0,1'],
             'filter.openOnly' => ['sometimes', 'in:0,1'],
+            'filter.createdFrom' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
+            'filter.createdTo' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'sort' => ['sometimes', 'string', 'max:255'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'perPage' => ['sometimes', 'integer', 'min:1', 'max:100'],

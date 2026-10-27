@@ -30,6 +30,24 @@ class OrderQueryService
                     });
                 }),
                 AllowedFilter::exact('status'),
+                // Dates use Cairo local calendar days, while created_at is stored as UTC.
+                // Inclusive from, exclusive start of the day after to (DST-safe).
+                AllowedFilter::callback('createdFrom', function (Builder $query, mixed $value): void {
+                    if ($value === null || $value === '') {
+                        return;
+                    }
+                    $from = CarbonImmutable::parse((string) $value, 'Africa/Cairo')
+                        ->startOfDay()->utc();
+                    $query->where('created_at', '>=', $from);
+                }),
+                AllowedFilter::callback('createdTo', function (Builder $query, mixed $value): void {
+                    if ($value === null || $value === '') {
+                        return;
+                    }
+                    $until = CarbonImmutable::parse((string) $value, 'Africa/Cairo')
+                        ->addDay()->startOfDay()->utc();
+                    $query->where('created_at', '<', $until);
+                }),
                 // Combine with lateOnly for current overdue orders. Historical late deliveries remain available via lateOnly alone.
                 AllowedFilter::callback('openOnly', function (Builder $query, mixed $value): void {
                     if ((string) $value === '1') {

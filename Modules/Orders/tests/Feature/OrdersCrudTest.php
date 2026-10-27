@@ -284,6 +284,49 @@ class OrdersCrudTest extends OrdersTestCase
         $this->getJson('/api/v1/orders?filter[bad]=1')->assertUnprocessable();
     }
 
+    public function test_created_date_range_uses_cairo_calendar_days_and_inclusive_end(): void
+    {
+        $previousDay = $this->draft();
+        $startOfDay = $this->draft(['customerId' => $this->secondCustomer->id]);
+        $endOfDay = $this->draft();
+        $nextDay = $this->draft(['customerId' => $this->secondCustomer->id]);
+
+        $dates = [
+            [$previousDay, '2026-10-27 23:59:59'],
+            [$startOfDay, '2026-10-28 00:00:00'],
+            [$endOfDay, '2026-10-28 23:59:59'],
+            [$nextDay, '2026-10-29 00:00:00'],
+        ];
+        foreach ($dates as [$order, $cairoTime]) {
+            $utcTime = \Carbon\CarbonImmutable::parse($cairoTime, 'Africa/Cairo')
+                ->utc()->format('Y-m-d H:i:s');
+            \Illuminate\Support\Facades\DB::table('orders')->where('id', $order->id)
+                ->update(['created_at' => $utcTime]);
+        }
+
+        $endpoint = '/api/v1/orders?filter[createdFrom]=2026-10-28&filter[createdTo]=2026-10-28';
+        $day = $this->getJson($endpoint)->assertOk()
+            ->assertJsonPath('data.pagination.total', 2);
+        $dayIds = array_column($day->json('data.orders'), 'id');
+        $this->assertContains($startOfDay->id, $dayIds);
+        $this->assertContains($endOfDay->id, $dayIds);
+        $this->assertNotContains($previousDay->id, $dayIds);
+        $this->assertNotContains($nextDay->id, $dayIds);
+
+        $this->getJson('/api/v1/orders?filter[createdFrom]=2026-10-29')->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.orders.0.id', $nextDay->id);
+        $this->getJson('/api/v1/orders?filter[createdTo]=2026-10-27')->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.orders.0.id', $previousDay->id);
+        $this->getJson($endpoint.'&filter[status]=1')->assertOk()
+            ->assertJsonPath('data.pagination.total', 0);
+        $this->getJson('/api/v1/orders?filter[createdFrom]=28-10-2026')->assertUnprocessable()
+            ->assertJsonValidationErrors('filter.createdFrom');
+        $this->getJson('/api/v1/orders?filter[createdTo]=2026-02-30')->assertUnprocessable()
+            ->assertJsonValidationErrors('filter.createdTo');
+    }
+
     public function test_late_only_includes_late_deliveries_and_excludes_on_time_deliveries(): void
     {
         $today = \Carbon\CarbonImmutable::now('Africa/Cairo');
