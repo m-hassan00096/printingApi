@@ -1,0 +1,68 @@
+name: V1 Release Gate
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - develop
+    paths:
+      - 'Modules/**'
+      - 'app/**'
+      - 'routes/**'
+      - 'bootstrap/**'
+      - '.github/workflows/v1-release-gate.yml'
+  push:
+    tags:
+      - 'v1.*'
+
+permissions:
+  contents: read
+
+jobs:
+  full-mysql-regression:
+    name: Full Laravel regression (MySQL 8)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: tabaa_release_gate
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_DATABASE: tabaa_release_gate
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+      QUEUE_CONNECTION: sync
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, intl, pdo_mysql, pdo_sqlite, sqlite3
+          tools: composer:v2
+          coverage: none
+      - name: Install dependencies (locked)
+        run: composer install --prefer-dist --no-interaction --no-progress
+      - name: Prepare isolated test environment
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+      - name: Validate clean install / migrations
+        run: php artisan migrate:fresh --force
+      - name: Run all Laravel feature + regression tests against MySQL
+        run: php artisan test
+      - name: Validate file-storage consistency command on fresh test DB
+        run: php artisan orders:audit-files
