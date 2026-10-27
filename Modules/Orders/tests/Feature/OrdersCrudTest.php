@@ -9,6 +9,31 @@ use Modules\Orders\Tests\Feature\Support\OrdersTestCase;
 
 class OrdersCrudTest extends OrdersTestCase
 {
+    public function test_unclassified_customer_can_place_order_with_null_type_snapshots(): void
+    {
+        $this->customer->customer_type_id = null;
+        $this->customer->save();
+
+        $order = $this->draft();
+        $this->getJson($this->path($order))
+            ->assertOk()
+            ->assertJsonPath('data.customerTypeId', null)
+            ->assertJsonPath('data.customerTypeName', null)
+            ->assertJsonPath('data.items.0.customerTypeId', null)
+            ->assertJsonPath('data.items.0.customerTypeName', null);
+
+        $this->assertDatabaseHas('orders', [
+            'id' => $order->id,
+            'customer_type_id_snapshot' => null,
+            'customer_type_name_snapshot' => null,
+        ]);
+        $this->assertDatabaseHas('order_items', [
+            'order_id' => $order->id,
+            'customer_type_id_snapshot' => null,
+            'customer_type_name_snapshot' => null,
+        ]);
+    }
+
     public function test_create_draft_has_no_order_number_or_liability_and_preserves_snapshots(): void
     {
         $response = $this->postJson('/api/v1/orders', $this->data());

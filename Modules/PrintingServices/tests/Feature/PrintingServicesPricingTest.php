@@ -39,17 +39,39 @@ class PrintingServicesPricingTest extends PrintingServiceTestCase
             ->assertJsonPath('data.suggestedTotal', '7000.00');
     }
 
-    public function test_null_price_requires_manual_entry_but_zero_is_free(): void
+    public function test_missing_base_price_defaults_to_zero_and_explicit_zero_stays_free(): void
     {
         $unpriced = $this->service(['basePrice' => null]);
         $this->preview($unpriced->id, $this->wholesale->id, 200)
-            ->assertOk()->assertJsonPath('data.requiresManualTotal', true)
-            ->assertJsonPath('data.suggestedTotal', null);
+            ->assertOk()
+            ->assertJsonPath('data.source', 'basePrice')
+            ->assertJsonPath('data.requiresManualTotal', false)
+            ->assertJsonPath('data.suggestedUnitPrice', '0.00')
+            ->assertJsonPath('data.suggestedTotal', '0.00');
 
         $free = $this->service(['name' => 'Free Catalog', 'basePrice' => '0.00']);
         $this->preview($free->id, $this->retail->id, 20)
             ->assertOk()->assertJsonPath('data.requiresManualTotal', false)
             ->assertJsonPath('data.suggestedTotal', '0.00');
+    }
+
+    public function test_unclassified_customer_uses_base_price_even_when_generic_tiers_exist(): void
+    {
+        $service = $this->service(['basePrice' => '12.00']);
+        $this->tier($service, [
+            'customer_type_id' => null,
+            'min_quantity' => null, 'max_quantity' => null, 'price' => '7.00',
+        ]);
+        $this->preview($service->id, null, 10)
+            ->assertOk()
+            ->assertJsonPath('data.source', 'basePrice')
+            ->assertJsonPath('data.suggestedUnitPrice', '12.00')
+            ->assertJsonPath('data.suggestedTotal', '120.00');
+
+        $this->preview($service->id, $this->wholesale->id, 10)
+            ->assertOk()
+            ->assertJsonPath('data.source', 'genericCatchAll')
+            ->assertJsonPath('data.suggestedUnitPrice', '7.00');
     }
 
     public function test_tier_price_of_five_seventy_five_is_exact_without_float_arithmetic(): void
