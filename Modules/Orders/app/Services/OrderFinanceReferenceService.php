@@ -13,6 +13,8 @@ class OrderFinanceReferenceService implements OrderFinanceReference
 
     public function findOrderIdsByNumber(string $search): array
     {
-        return Order::withTrashed()->where('order_number', 'like', '%'.$search.'%')->pluck('id')->all();
+        $escaped = str_replace(['!', '%', '_'], ['!!', '!%', '!_'], $search);
+        return Order::withTrashed()->whereRaw("order_number LIKE ? ESCAPE '!'", ['%'.$escaped.'%'])
+            ->pluck('id')->all();
     }
 }

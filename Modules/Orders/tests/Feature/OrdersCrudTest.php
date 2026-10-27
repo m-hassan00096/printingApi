@@ -294,6 +294,14 @@ class OrdersCrudTest extends OrdersTestCase
         $this->assertContains($late->id, $ids);
         $this->assertNotContains($onTime->id, $ids);
 
+        // The Dashboard's "currently overdue" deep link must exclude already-delivered
+        // historical lateness, while leaving lateOnly's existing history intact.
+        $current = $this->getJson('/api/v1/orders?filter[lateOnly]=1&filter[openOnly]=1')
+            ->assertOk()->assertJsonPath('data.pagination.total', 1);
+        $this->assertSame([$pending->id], array_column($current->json('data.orders'), 'id'));
+        $this->getJson('/api/v1/orders?filter[openOnly]=1')
+            ->assertOk()->assertJsonPath('data.pagination.total', 1);
+
         $this->getJson($this->path($late))->assertOk()
             ->assertJsonPath('data.delayStatus', 1);
     }
