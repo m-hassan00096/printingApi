@@ -30,6 +30,12 @@ class OrderQueryService
                     });
                 }),
                 AllowedFilter::exact('status'),
+                // Combine with lateOnly for current overdue orders. Historical late deliveries remain available via lateOnly alone.
+                AllowedFilter::callback('openOnly', function (Builder $query, mixed $value): void {
+                    if ((string) $value === '1') {
+                        $query->where('status', OrderStatus::CONFIRMED->value)->whereNull('delivered_at');
+                    }
+                }),
                 AllowedFilter::exact('productionStatus', 'production_status'),
                 AllowedFilter::callback('lateOnly', function (Builder $query, mixed $value): void {
                     if ((string) $value !== '1') {
