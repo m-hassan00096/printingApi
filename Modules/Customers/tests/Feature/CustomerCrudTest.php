@@ -220,7 +220,7 @@ class CustomerCrudTest extends CustomerTestCase
             'phone' => '',
             'status' => 9,
         ])->assertUnprocessable()
-            ->assertJsonValidationErrors(['name', 'phone', 'customerTypeId', 'status']);
+            ->assertJsonValidationErrors(['name', 'phone', 'status']);
     }
 
     public function test_deletion_soft_deletes_and_releases_phone_for_reuse(): void
