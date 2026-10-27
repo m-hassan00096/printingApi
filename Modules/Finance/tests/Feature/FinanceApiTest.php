@@ -442,6 +442,23 @@ class FinanceApiTest extends OrdersTestCase
             ->assertOk()->assertJsonPath('data.pagination.total', 1);
     }
 
+    public function test_collection_search_escapes_wildcards_in_linked_order_numbers(): void
+    {
+        $order = $this->draft();
+        $this->withHeader('Idempotency-Key', 'linked-order-literal-confirm')
+            ->postJson($this->path($order).'/confirm', [
+                'depositAmount' => '20.00', 'paymentMethod' => 0,
+            ])->assertOk();
+
+        foreach (['%', '_', '!'] as $value) {
+            $this->getJson('/api/v1/finance/collections?'.http_build_query([
+                'filter' => ['search' => $value],
+            ]))->assertOk()->assertJsonPath('data.pagination.total', 0);
+        }
+        $this->getJson('/api/v1/finance/collections?filter[search]=ORD-')
+            ->assertOk()->assertJsonPath('data.pagination.total', 1);
+    }
+
     public function test_each_finance_index_accepts_only_its_own_filters(): void
     {
         $this->getJson('/api/v1/finance/collections?filter[type]=1')
