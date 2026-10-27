@@ -39,10 +39,9 @@ class WorkflowStaffSeeder extends Seeder
             throw new RuntimeException('WorkflowStaffSeeder is permitted only in local/testing environments.');
         }
 
+        // A secret is required only for creating NEW accounts. Safe permission-only
+        // reruns should never require or reset a pre-existing user's password.
         $password = (string) (getenv('TABAA_WORKFLOW_STAFF_PASSWORD') ?: '');
-        if (strlen($password) < 8) {
-            throw new RuntimeException('Set TABAA_WORKFLOW_STAFF_PASSWORD to the requested password before running this seeder.');
-        }
 
         $required = array_values(array_unique(array_merge(self::DESIGNER_PERMISSIONS, self::RECEPTION_PERMISSIONS)));
         $permissions = Permission::query()->where('guard_name', 'web')
@@ -78,6 +77,9 @@ class WorkflowStaffSeeder extends Seeder
             ] as $username => [$name, $role]) {
                 $user = User::withTrashed()->where('username', $username)->first();
                 if ($user === null) {
+                    if (strlen($password) < 8) {
+                        throw new RuntimeException('Set TABAA_WORKFLOW_STAFF_PASSWORD before creating new staff accounts.');
+                    }
                     $user = User::create([
                         'username' => $username, 'name' => $name,
                         'password' => $password, 'status' => UserStatus::ACTIVE,
