@@ -62,7 +62,18 @@ jobs:
           php artisan key:generate --force
       - name: Validate clean install / migrations
         run: php artisan migrate:fresh --force
-      - name: Run all Laravel feature + regression tests against MySQL
-        run: php artisan test
-      - name: Validate file-storage consistency command on fresh test DB
-        run: php artisan orders:audit-files
+      - name: Run application and every module's feature suite with isolated MySQL fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          php artisan test tests/Unit tests/Feature
+          for module in Identity Settings PrintingServices Customers Orders Production Deliveries Finance; do
+            echo "::group::MySQL feature tests: $module"
+            php artisan migrate:fresh --force
+            php artisan test "Modules/$module/tests/Feature"
+            echo "::endgroup::"
+          done
+      - name: Validate file-storage consistency command on a clean test database
+        run: |
+          php artisan migrate:fresh --force
+          php artisan orders:audit-files
