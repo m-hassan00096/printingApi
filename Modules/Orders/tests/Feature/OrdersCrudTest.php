@@ -354,7 +354,7 @@ class OrdersCrudTest extends OrdersTestCase
         $delivered->save();
 
         $canceled = $this->draft();
-        $canceled->status = OrderStatus::CANCELED;
+        $canceled->status = OrderStatus::CANCELLED;
         $canceled->due_date = $today->subDay()->toDateString();
         $canceled->save();
 
@@ -404,7 +404,7 @@ class OrdersCrudTest extends OrdersTestCase
         $delivered->save();
 
         $canceled = $this->draft();
-        $canceled->status = OrderStatus::CANCELED;
+        $canceled->status = OrderStatus::CANCELLED;
         $canceled->production_status = \Modules\Orders\Enums\OrderProductionStatus::READY_FOR_DELIVERY;
         $canceled->due_date = $today;
         $canceled->save();
