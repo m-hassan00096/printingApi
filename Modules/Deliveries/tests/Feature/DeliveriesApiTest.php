@@ -223,6 +223,33 @@ class DeliveriesApiTest extends OrdersTestCase
         $this->getJson('/api/v1/deliveries')->assertJsonPath('data.pagination.total', 2);
     }
 
+    public function test_independent_delivery_collection_reversal_keeps_handover_and_only_corrects_customer_ledger(): void
+    {
+        $order = $this->ready();
+        $this->deliver($order, ['collectedAmount' => '80.00', 'paymentMethod' => 0])->assertOk();
+        $delivery = Delivery::query()->firstOrFail();
+        $collectionId = $delivery->collection_id;
+
+        $this->withHeader('Idempotency-Key', 'delivery-correct-only')
+            ->postJson('/api/v1/finance/collections/'.$collectionId.'/reverse', [
+                'reason' => 'Collection recorded by mistake',
+            ])->assertOk();
+        $this->assertSame(DeliveryStatus::ACTIVE, $delivery->fresh()->status);
+        $this->assertSame(OrderProductionStatus::DELIVERED, $order->fresh()->production_status);
+        $this->assertSame(CollectionStatus::REVERSED, Collection::findOrFail($collectionId)->status);
+        $this->assertDatabaseCount('finance_ledger_entries', 3);
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id.'/balance')
+            ->assertJsonPath('data.amount', '350.00')->assertJsonPath('data.type', 1);
+        $this->getJson('/api/v1/deliveries/'.$delivery->id)->assertOk()
+            ->assertJsonPath('data.delivery.collection.status', 2)
+            ->assertJsonPath('data.delivery.effectiveReceivedAmount', '0.00');
+
+        $this->cancel($delivery->id, ['reason' => 'Cancel later'])->assertOk();
+        $this->assertSame(DeliveryStatus::CANCELLED, $delivery->fresh()->status);
+        $this->assertSame(OrderProductionStatus::READY_FOR_DELIVERY, $order->fresh()->production_status);
+        $this->assertDatabaseCount('finance_ledger_entries', 3);
+    }
+
     public function test_previously_reversed_collection_is_not_reversed_again_on_cancellation(): void
     {
         $o = $this->ready();

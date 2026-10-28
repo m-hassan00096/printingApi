@@ -263,6 +263,42 @@ class FinanceApiTest extends OrdersTestCase
         $this->assertDatabaseCount('finance_ledger_entries', 3);
     }
 
+    public function test_order_deposit_receipt_reversal_preserves_order_and_adds_single_audit_movement(): void
+    {
+        $order = $this->draft();
+        $this->withHeader('Idempotency-Key', 'deposit-for-reversal')
+            ->postJson($this->path($order).'/confirm', [
+                'depositAmount' => '100.00', 'paymentMethod' => 0,
+            ])->assertOk();
+        $collection = Collection::query()->firstOrFail();
+        $this->assertSame(1, $collection->source->value);
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id.'/balance')
+            ->assertJsonPath('data.amount', '250.00')->assertJsonPath('data.type', 1);
+
+        $route = '/api/v1/finance/collections/'.$collection->id.'/reverse';
+        $this->withHeader('Idempotency-Key', 'deposit-reverse-once')
+            ->postJson($route, ['reason' => 'Deposit was entered twice'])->assertOk();
+        $this->withHeader('Idempotency-Key', 'deposit-reverse-once')
+            ->postJson($route, ['reason' => 'Deposit was entered twice'])->assertOk();
+        $this->withHeader('Idempotency-Key', 'deposit-reverse-again')
+            ->postJson($route, ['reason' => 'Try again'])->assertStatus(409);
+
+        $this->assertSame(OrderStatus::CONFIRMED, $order->fresh()->status);
+        $collection->refresh();
+        $this->assertSame(\Modules\Finance\Enums\CollectionStatus::REVERSED, $collection->status);
+        $this->assertSame('Deposit was entered twice', $collection->reversal_reason);
+        $this->assertNotNull($collection->reversed_by);
+        $this->assertNotNull($collection->reversed_at);
+        $this->assertDatabaseHas('finance_ledger_entries', [
+            'event_key' => 'reverse-collection:'.$collection->id,
+            'signed_amount' => '100.00', 'collection_id' => $collection->id,
+        ]);
+        $this->assertDatabaseCount('finance_collections', 1);
+        $this->assertDatabaseCount('finance_ledger_entries', 3);
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id.'/balance')
+            ->assertJsonPath('data.amount', '350.00')->assertJsonPath('data.type', 1);
+    }
+
     public function test_refund_preview_tracks_credit_with_idempotent_refunds_and_blocks_insufficient_balance(): void
     {
         $id = $this->customer->id;
