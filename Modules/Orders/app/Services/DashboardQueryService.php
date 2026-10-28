@@ -25,6 +25,8 @@ class DashboardQueryService
         $late = $open()->whereDate('due_date', '<', $today)->count();
         $ready = $open()->where('production_status', OrderProductionStatus::READY_FOR_DELIVERY->value)->count();
         $dueToday = $open()->whereDate('due_date', '=', $today)->count();
+        $readyDueToday = $open()->whereDate('due_date', '=', $today)
+            ->where('production_status', OrderProductionStatus::READY_FOR_DELIVERY->value)->count();
 
         $stageCounts = OrderItem::query()
             ->whereHas('order', static fn ($q) => $q
@@ -62,6 +64,7 @@ class DashboardQueryService
                 'overdueOrders' => $late,
                 'readyForDelivery' => $ready,
                 'dueToday' => $dueToday,
+                'readyDueToday' => $readyDueToday,
             ],
             'productionPressure' => [
                 'notStarted' => (int) ($stageCounts[0] ?? 0),
