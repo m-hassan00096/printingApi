@@ -86,6 +86,39 @@ class DeliveriesApiTest extends OrdersTestCase
         $this->getJson('/api/v1/deliveries/ready/'.$draft->id)->assertNotFound();
     }
 
+    public function test_delivery_customer_select_and_ready_history_filters_use_customer_id(): void
+    {
+        $ready = $this->ready();
+        $other = $this->ready();
+        $otherCustomer = \Modules\Customers\Models\Customer::query()->create([
+            'name' => 'Second Recipient', 'phone' => '01111117777', 'status' => 1,
+        ]);
+        $other->customer_id = $otherCustomer->id;
+        $other->customer_name_snapshot = $otherCustomer->name;
+        $other->customer_phone_snapshot = $otherCustomer->phone;
+        $other->save();
+
+        $this->getJson('/api/v1/deliveries/ready?filter[customerId]='.$ready->customer_id)
+            ->assertOk()->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.orders.0.orderId', $ready->id);
+        $this->getJson('/api/v1/deliveries/ready?filter[customerId]='.$otherCustomer->id)
+            ->assertOk()->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.orders.0.orderId', $other->id);
+
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers')
+            ->assertOk()->assertJsonCount(2, 'data.0.options');
+
+        $this->deliver($ready)->assertOk();
+        $this->getJson('/api/v1/deliveries?filter[customerId]='.$ready->customer_id)
+            ->assertOk()->assertJsonPath('data.pagination.total', 1);
+        $this->getJson('/api/v1/deliveries?filter[customerId]='.$otherCustomer->id)
+            ->assertOk()->assertJsonPath('data.pagination.total', 0);
+        $this->getJson('/api/v1/deliveries?filter[customerId]=bad')
+            ->assertUnprocessable()->assertJsonValidationErrors('filter.customerId');
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers')
+            ->assertOk()->assertJsonCount(2, 'data.0.options');
+    }
+
     public function test_zero_collection_delivery_is_atomic_idempotent_and_prevents_production_changes(): void
     {
         $o = $this->ready();

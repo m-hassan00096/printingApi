@@ -11,11 +11,11 @@ class DeliveryIndexRequest extends FormRequest
     public function rules(): array
     {
         $ready = $this->route()->getName() === 'api.deliveries.ready.index';
-        $keys = $ready ? 'search,customerId' : 'search,dateFrom,dateTo,status';
+        $keys = $ready ? 'search,customerId' : 'search,customerId,dateFrom,dateTo,status';
         return [
             'filter' => ['sometimes', 'array:'.$keys],
             'filter.search' => ['sometimes', 'string', 'min:1', 'max:200'],
-            'filter.customerId' => [$ready ? 'sometimes' : 'prohibited', 'integer', 'min:1'],
+            'filter.customerId' => ['sometimes', 'integer', 'min:1'],
             'filter.dateFrom' => [$ready ? 'prohibited' : 'sometimes', 'date_format:Y-m-d'],
             'filter.dateTo' => [$ready ? 'prohibited' : 'sometimes', 'date_format:Y-m-d'],
             'filter.status' => [$ready ? 'prohibited' : 'sometimes', 'integer', 'in:1,2'],
