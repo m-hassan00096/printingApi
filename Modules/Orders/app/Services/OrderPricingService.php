@@ -21,7 +21,7 @@ class OrderPricingService
             throw ValidationException::withMessages(['customerId' => __('orders.messages.customer_inactive')]);
         }
 
-        if ($customer->customerType === null) {
+        if ($customer->customer_type_id !== null && $customer->customerType === null) {
             throw ValidationException::withMessages(['customerId' => __('orders.messages.customer_inactive')]);
         }
 
@@ -34,7 +34,7 @@ class OrderPricingService
         $order->customer_name_snapshot = $customer->name;
         $order->customer_phone_snapshot = $customer->phone;
         $order->customer_type_id_snapshot = $customer->customer_type_id;
-        $order->customer_type_name_snapshot = $customer->customerType->name;
+        $order->customer_type_name_snapshot = $customer->customerType?->name;
     }
 
     /** Lock the service row before a new order-item reference is persisted. */

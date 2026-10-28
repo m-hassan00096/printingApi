@@ -160,7 +160,19 @@ class OrdersProductionAdapter implements ProductionOrderGateway
             'dueDate' => ['due_date', 'asc'], '-dueDate' => ['due_date', 'desc'],
         ];
         [$key, $direction] = $columnMap[$sort] ?? ['due_date', 'asc'];
-        if ($key === 'due_date') {
+        if ($sort === 'priority') {
+            // Operational buckets in Cairo calendar: overdue, today, upcoming, no date.
+            // Within a date, unfinished design precedes completed design;
+            // remaining ties use item ID for stable pagination.
+            $today = CarbonImmutable::now('Africa/Cairo')->toDateString();
+            $query->join('orders as production_sort_orders', 'production_sort_orders.id', '=', 'order_items.order_id')
+                ->select('order_items.*')
+                ->orderByRaw('CASE WHEN production_sort_orders.due_date IS NULL THEN 3
+                    WHEN production_sort_orders.due_date < ? THEN 0
+                    WHEN production_sort_orders.due_date = ? THEN 1 ELSE 2 END ASC', [$today, $today])
+                ->orderBy('production_sort_orders.due_date', 'asc')
+                ->orderBy('order_items.production_stage', 'asc');
+        } elseif ($key === 'due_date') {
             $query->join('orders as production_sort_orders', 'production_sort_orders.id', '=', 'order_items.order_id')
                 ->select('order_items.*')
                 ->orderByRaw('production_sort_orders.due_date IS NULL ASC')

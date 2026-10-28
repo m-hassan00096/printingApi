@@ -48,6 +48,7 @@ class DashboardApiTest extends OrdersTestCase
                 ->assertJsonPath('data.metrics.overdueOrders', 1)
                 ->assertJsonPath('data.metrics.readyForDelivery', 1)
                 ->assertJsonPath('data.metrics.dueToday', 1)
+                ->assertJsonPath('data.metrics.readyDueToday', 1)
                 ->assertJsonPath('data.productionPressure.printing', 1)
                 ->assertJsonPath('data.productionPressure.design', 1)
                 ->assertJsonPath('data.productionPressure.ready', 1)
@@ -78,6 +79,7 @@ class DashboardApiTest extends OrdersTestCase
         $this->staffRole->givePermissionTo(Permission::findOrCreate('orders.list', 'web'));
         $this->getJson('/api/v1/dashboard')->assertOk()
             ->assertJsonPath('data.metrics.activeOrders', 0)
+            ->assertJsonPath('data.metrics.readyDueToday', 0)
             ->assertJsonPath('data.productionPressure.printing', 0);
     }
 }

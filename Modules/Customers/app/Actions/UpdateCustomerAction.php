@@ -24,8 +24,10 @@ class UpdateCustomerAction
                 $locked = Customer::query()->whereKey($customer->id)->lockForUpdate()->firstOrFail();
 
                 if (array_key_exists('customerTypeId', $data)) {
-                    $this->types->assertEligibleAndLock((int) $data['customerTypeId']);
-                    $locked->customer_type_id = (int) $data['customerTypeId'];
+                    if ($data['customerTypeId'] !== null) {
+                        $this->types->assertEligibleAndLock((int) $data['customerTypeId']);
+                    }
+                    $locked->customer_type_id = $data['customerTypeId'] === null ? null : (int) $data['customerTypeId'];
                 }
 
                 if ($locked->status === CustomerStatus::ACTIVE

@@ -17,11 +17,13 @@ class CreateCustomerAction
     {
         try {
             return DB::transaction(function () use ($data): Customer {
-                $this->types->assertEligibleAndLock((int) $data['customerTypeId']);
+                if (isset($data['customerTypeId'])) {
+                    $this->types->assertEligibleAndLock((int) $data['customerTypeId']);
+                }
 
                 $customer = new Customer();
                 $customer->fill(Arr::only($data, ['name', 'phone', 'address', 'status']));
-                $customer->customer_type_id = (int) $data['customerTypeId'];
+                $customer->customer_type_id = isset($data['customerTypeId']) ? (int) $data['customerTypeId'] : null;
                 $customer->live_phone_hash = CustomerPhone::hash($customer->phone);
                 $customer->save();
 

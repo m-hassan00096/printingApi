@@ -31,7 +31,7 @@ class UpdateCustomerRequest extends FormRequest
             'name' => ['sometimes', 'required', 'string', 'max:150'],
             'phone' => ['sometimes', 'required', 'string', 'max:100', $this->uniquePhoneRule($customer?->id)],
             'address' => ['sometimes', 'nullable', 'string', 'max:1000'],
-            'customerTypeId' => ['sometimes', 'required', 'integer', $this->customerTypeRule()],
+            'customerTypeId' => ['sometimes', 'nullable', 'integer', $this->customerTypeRule()],
             'status' => ['sometimes', 'required', 'integer', Rule::enum(CustomerStatus::class)],
         ];
     }

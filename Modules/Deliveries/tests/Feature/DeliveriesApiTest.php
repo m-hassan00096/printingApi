@@ -86,6 +86,51 @@ class DeliveriesApiTest extends OrdersTestCase
         $this->getJson('/api/v1/deliveries/ready/'.$draft->id)->assertNotFound();
     }
 
+    public function test_delivery_customer_select_and_ready_history_filters_use_customer_id(): void
+    {
+        $ready = $this->ready();
+        $otherCustomer = $this->secondCustomer;
+        $other = $this->ready(['customerId' => $otherCustomer->id]);
+
+        $this->getJson('/api/v1/deliveries/ready?filter[customerId]='.$ready->customer_id)
+            ->assertOk()->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.orders.0.orderId', $ready->id);
+        $this->getJson('/api/v1/deliveries/ready?filter[customerId]='.$otherCustomer->id)
+            ->assertOk()->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.orders.0.orderId', $other->id);
+
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=ready')
+            ->assertOk()->assertJsonCount(2, 'data.0.options');
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=history')
+            ->assertOk()->assertJsonCount(0, 'data.0.options');
+
+        $this->deliver($ready)->assertOk();
+        $this->getJson('/api/v1/deliveries?filter[customerId]='.$ready->customer_id)
+            ->assertOk()->assertJsonPath('data.pagination.total', 1);
+        $this->getJson('/api/v1/deliveries?filter[customerId]='.$otherCustomer->id)
+            ->assertOk()->assertJsonPath('data.pagination.total', 0);
+        $this->getJson('/api/v1/deliveries?filter[customerId]=bad')
+            ->assertUnprocessable()->assertJsonValidationErrors('filter.customerId');
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=ready')
+            ->assertOk()->assertJsonCount(1, 'data.0.options');
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=history')
+            ->assertOk()->assertJsonCount(1, 'data.0.options');
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=invalid')
+            ->assertUnprocessable();
+    }
+
+    public function test_delivery_customer_options_respect_tab_permissions(): void
+    {
+        $this->ready();
+        $this->adminRole->revokePermissionTo('deliveries.ready.view');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=ready')
+            ->assertForbidden();
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=history')
+            ->assertOk()->assertJsonCount(0, 'data.0.options');
+    }
+
     public function test_zero_collection_delivery_is_atomic_idempotent_and_prevents_production_changes(): void
     {
         $o = $this->ready();
@@ -176,6 +221,33 @@ class DeliveriesApiTest extends OrdersTestCase
         $this->assertSame(DeliveryStatus::CANCELLED, $old->fresh()->status);
         $this->assertSame(OrderProductionStatus::DELIVERED, $o->fresh()->production_status);
         $this->getJson('/api/v1/deliveries')->assertJsonPath('data.pagination.total', 2);
+    }
+
+    public function test_independent_delivery_collection_reversal_keeps_handover_and_only_corrects_customer_ledger(): void
+    {
+        $order = $this->ready();
+        $this->deliver($order, ['collectedAmount' => '80.00', 'paymentMethod' => 0])->assertOk();
+        $delivery = Delivery::query()->firstOrFail();
+        $collectionId = $delivery->collection_id;
+
+        $this->withHeader('Idempotency-Key', 'delivery-correct-only')
+            ->postJson('/api/v1/finance/collections/'.$collectionId.'/reverse', [
+                'reason' => 'Collection recorded by mistake',
+            ])->assertOk();
+        $this->assertSame(DeliveryStatus::ACTIVE, $delivery->fresh()->status);
+        $this->assertSame(OrderProductionStatus::DELIVERED, $order->fresh()->production_status);
+        $this->assertSame(CollectionStatus::REVERSED, Collection::findOrFail($collectionId)->status);
+        $this->assertDatabaseCount('finance_ledger_entries', 3);
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id.'/balance')
+            ->assertJsonPath('data.amount', '350.00')->assertJsonPath('data.type', 1);
+        $this->getJson('/api/v1/deliveries/'.$delivery->id)->assertOk()
+            ->assertJsonPath('data.delivery.collection.status', 2)
+            ->assertJsonPath('data.delivery.effectiveReceivedAmount', '0.00');
+
+        $this->cancel($delivery->id, ['reason' => 'Cancel later'])->assertOk();
+        $this->assertSame(DeliveryStatus::CANCELLED, $delivery->fresh()->status);
+        $this->assertSame(OrderProductionStatus::READY_FOR_DELIVERY, $order->fresh()->production_status);
+        $this->assertDatabaseCount('finance_ledger_entries', 3);
     }
 
     public function test_previously_reversed_collection_is_not_reversed_again_on_cancellation(): void

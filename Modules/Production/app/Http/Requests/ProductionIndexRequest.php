@@ -19,7 +19,7 @@ class ProductionIndexRequest extends FormRequest
             'filter.lateOnly' => ['sometimes', 'in:0,1'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'perPage' => ['sometimes', 'integer', 'min:1', 'max:100'],
-            'sort' => ['sometimes', 'string', 'in:id,-id,dueDate,-dueDate'],
+            'sort' => ['sometimes', 'string', 'in:id,-id,dueDate,-dueDate,priority'],
         ];
     }
 }

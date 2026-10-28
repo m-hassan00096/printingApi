@@ -14,6 +14,29 @@ use Modules\Settings\Enums\ParameterValueStatus;
 
 class CustomerCrudTest extends CustomerTestCase
 {
+    public function test_can_create_and_update_customer_without_category(): void
+    {
+        $input = $this->payload(['phone' => '01199993333']);
+        unset($input['customerTypeId']);
+
+        $response = $this->postJson('/api/v1/customers', $input)
+            ->assertCreated()
+            ->assertJsonPath('data.customerTypeId', null)
+            ->assertJsonPath('data.customerType', null);
+        $id = $response->json('data.id');
+
+        $this->assertDatabaseHas('customers', ['id' => $id, 'customer_type_id' => null]);
+
+        $this->patchJson('/api/v1/customers/'.$id, ['customerTypeId' => $this->retail->id])
+            ->assertOk();
+        $this->getJson('/api/v1/customers/'.$id)
+            ->assertOk()->assertJsonPath('data.customerTypeId', $this->retail->id);
+
+        $this->patchJson('/api/v1/customers/'.$id, ['customerTypeId' => null])
+            ->assertOk();
+        $this->assertDatabaseHas('customers', ['id' => $id, 'customer_type_id' => null]);
+    }
+
     public function test_create_returns_201_localized_message_and_created_customer_resource(): void
     {
         $response = $this->postJson('/api/v1/customers', $this->payload([
@@ -197,7 +220,7 @@ class CustomerCrudTest extends CustomerTestCase
             'phone' => '',
             'status' => 9,
         ])->assertUnprocessable()
-            ->assertJsonValidationErrors(['name', 'phone', 'customerTypeId', 'status']);
+            ->assertJsonValidationErrors(['name', 'phone', 'status']);
     }
 
     public function test_deletion_soft_deletes_and_releases_phone_for_reuse(): void

@@ -9,6 +9,31 @@ use Modules\Orders\Tests\Feature\Support\OrdersTestCase;
 
 class OrdersCrudTest extends OrdersTestCase
 {
+    public function test_unclassified_customer_can_place_order_with_null_type_snapshots(): void
+    {
+        $this->customer->customer_type_id = null;
+        $this->customer->save();
+
+        $order = $this->draft();
+        $this->getJson($this->path($order))
+            ->assertOk()
+            ->assertJsonPath('data.customerTypeId', null)
+            ->assertJsonPath('data.customerTypeName', null)
+            ->assertJsonPath('data.items.0.customerTypeId', null)
+            ->assertJsonPath('data.items.0.customerTypeName', null);
+
+        $this->assertDatabaseHas('orders', [
+            'id' => $order->id,
+            'customer_type_id_snapshot' => null,
+            'customer_type_name_snapshot' => null,
+        ]);
+        $this->assertDatabaseHas('order_items', [
+            'order_id' => $order->id,
+            'customer_type_id_snapshot' => null,
+            'customer_type_name_snapshot' => null,
+        ]);
+    }
+
     public function test_create_draft_has_no_order_number_or_liability_and_preserves_snapshots(): void
     {
         $response = $this->postJson('/api/v1/orders', $this->data());
@@ -259,51 +284,140 @@ class OrdersCrudTest extends OrdersTestCase
         $this->getJson('/api/v1/orders?filter[bad]=1')->assertUnprocessable();
     }
 
-    public function test_late_only_includes_late_deliveries_and_excludes_on_time_deliveries(): void
+    public function test_created_date_range_uses_cairo_calendar_days_and_inclusive_end(): void
+    {
+        $previousDay = $this->draft();
+        $startOfDay = $this->draft(['customerId' => $this->secondCustomer->id]);
+        $endOfDay = $this->draft();
+        $nextDay = $this->draft(['customerId' => $this->secondCustomer->id]);
+
+        $dates = [
+            [$previousDay, '2026-10-27 23:59:59'],
+            [$startOfDay, '2026-10-28 00:00:00'],
+            [$endOfDay, '2026-10-28 23:59:59'],
+            [$nextDay, '2026-10-29 00:00:00'],
+        ];
+        foreach ($dates as [$order, $cairoTime]) {
+            $utcTime = \Carbon\CarbonImmutable::parse($cairoTime, 'Africa/Cairo')
+                ->utc()->format('Y-m-d H:i:s');
+            \Illuminate\Support\Facades\DB::table('orders')->where('id', $order->id)
+                ->update(['created_at' => $utcTime]);
+        }
+
+        $endpoint = '/api/v1/orders?filter[createdFrom]=2026-10-28&filter[createdTo]=2026-10-28';
+        $day = $this->getJson($endpoint)->assertOk()
+            ->assertJsonPath('data.pagination.total', 2);
+        $dayIds = array_column($day->json('data.orders'), 'id');
+        $this->assertContains($startOfDay->id, $dayIds);
+        $this->assertContains($endOfDay->id, $dayIds);
+        $this->assertNotContains($previousDay->id, $dayIds);
+        $this->assertNotContains($nextDay->id, $dayIds);
+
+        $this->getJson('/api/v1/orders?filter[createdFrom]=2026-10-29')->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.orders.0.id', $nextDay->id);
+        $this->getJson('/api/v1/orders?filter[createdTo]=2026-10-27')->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.orders.0.id', $previousDay->id);
+        $this->getJson($endpoint.'&filter[status]=1')->assertOk()
+            ->assertJsonPath('data.pagination.total', 0);
+        $this->getJson('/api/v1/orders?filter[createdFrom]=28-10-2026')->assertUnprocessable()
+            ->assertJsonValidationErrors('filter.createdFrom');
+        $this->getJson('/api/v1/orders?filter[createdTo]=2026-02-30')->assertUnprocessable()
+            ->assertJsonValidationErrors('filter.createdTo');
+    }
+
+    public function test_late_only_includes_all_undelivered_overdue_stages_and_excludes_closed_orders(): void
     {
         $today = \Carbon\CarbonImmutable::now('Africa/Cairo');
+        $stages = [
+            \Modules\Orders\Enums\OrderProductionStatus::NOT_STARTED,
+            \Modules\Orders\Enums\OrderProductionStatus::IN_PRODUCTION,
+            \Modules\Orders\Enums\OrderProductionStatus::PARTIALLY_READY,
+            \Modules\Orders\Enums\OrderProductionStatus::READY_FOR_DELIVERY,
+        ];
+        $expected = [];
+        foreach ($stages as $stage) {
+            $order = $this->draft();
+            $order->status = OrderStatus::CONFIRMED;
+            $order->due_date = $today->subDay()->toDateString();
+            $order->production_status = $stage;
+            $order->save();
+            $expected[] = $order->id;
+        }
+        $delivered = $this->draft();
+        $delivered->status = OrderStatus::CONFIRMED;
+        $delivered->due_date = $today->subDays(3)->toDateString();
+        $delivered->delivered_at = $today->subDay()->utc();
+        $delivered->delivered_local_date = $today->subDay()->toDateString();
+        $delivered->production_status = \Modules\Orders\Enums\OrderProductionStatus::DELIVERED;
+        $delivered->save();
 
-        $pending = $this->draft();
-        $pending->status = OrderStatus::CONFIRMED;
-        $pending->due_date = $today->subDays(2)->format('Y-m-d');
-        $pending->production_status = \Modules\Orders\Enums\OrderProductionStatus::NOT_STARTED;
-        $pending->save();
+        $canceled = $this->draft();
+        $canceled->status = OrderStatus::CANCELLED;
+        $canceled->due_date = $today->subDay()->toDateString();
+        $canceled->save();
 
-        // Cairo's delivered date is authoritative even when UTC calendar day differs.
-        $late = $this->draft(['customerId' => $this->secondCustomer->id]);
-        $late->status = OrderStatus::CONFIRMED;
-        $late->due_date = $today->subDays(4)->format('Y-m-d');
-        $late->delivered_at = $today->subDays(3)->setTime(0, 30)->utc();
-        $late->delivered_local_date = $today->subDays(3)->format('Y-m-d');
-        $late->production_status = \Modules\Orders\Enums\OrderProductionStatus::DELIVERED;
-        $late->save();
-
-        $onTime = $this->draft();
-        $onTime->status = OrderStatus::CONFIRMED;
-        $onTime->due_date = $today->subDays(1)->format('Y-m-d');
-        $onTime->delivered_at = $today->subDay()->setTime(10, 0)->utc();
-        $onTime->delivered_local_date = $today->subDay()->format('Y-m-d');
-        $onTime->production_status = \Modules\Orders\Enums\OrderProductionStatus::DELIVERED;
-        $onTime->save();
+        $dueToday = $this->draft();
+        $dueToday->status = OrderStatus::CONFIRMED;
+        $dueToday->due_date = $today->toDateString();
+        $dueToday->save();
 
         $response = $this->getJson('/api/v1/orders?filter[lateOnly]=1')->assertOk()
-            ->assertJsonPath('data.pagination.total', 2);
-
+            ->assertJsonPath('data.pagination.total', 4);
         $ids = array_column($response->json('data.orders'), 'id');
-        $this->assertContains($pending->id, $ids);
-        $this->assertContains($late->id, $ids);
-        $this->assertNotContains($onTime->id, $ids);
+        foreach ($expected as $id) $this->assertContains($id, $ids);
+        $this->assertNotContains($delivered->id, $ids);
+        $this->assertNotContains($canceled->id, $ids);
+        $this->assertNotContains($dueToday->id, $ids);
+        // The legacy openOnly parameter may still be accepted, but cannot change current-late results.
+        $this->getJson('/api/v1/orders?filter[lateOnly]=1&filter[openOnly]=1')
+            ->assertOk()->assertJsonPath('data.pagination.total', 4);
+    }
 
-        // The Dashboard's "currently overdue" deep link must exclude already-delivered
-        // historical lateness, while leaving lateOnly's existing history intact.
-        $current = $this->getJson('/api/v1/orders?filter[lateOnly]=1&filter[openOnly]=1')
-            ->assertOk()->assertJsonPath('data.pagination.total', 1);
-        $this->assertSame([$pending->id], array_column($current->json('data.orders'), 'id'));
-        $this->getJson('/api/v1/orders?filter[openOnly]=1')
-            ->assertOk()->assertJsonPath('data.pagination.total', 1);
+    public function test_ready_due_today_matches_dashboard_metric_and_excludes_other_stages(): void
+    {
+        $today = \Carbon\CarbonImmutable::now('Africa/Cairo')->toDateString();
+        $ready = $this->draft();
+        $ready->status = OrderStatus::CONFIRMED;
+        $ready->production_status = \Modules\Orders\Enums\OrderProductionStatus::READY_FOR_DELIVERY;
+        $ready->due_date = $today;
+        $ready->save();
 
-        $this->getJson($this->path($late))->assertOk()
-            ->assertJsonPath('data.delayStatus', 1);
+        $unfinished = $this->draft();
+        $unfinished->status = OrderStatus::CONFIRMED;
+        $unfinished->production_status = \Modules\Orders\Enums\OrderProductionStatus::IN_PRODUCTION;
+        $unfinished->due_date = $today;
+        $unfinished->save();
+
+        $past = $this->draft();
+        $past->status = OrderStatus::CONFIRMED;
+        $past->production_status = \Modules\Orders\Enums\OrderProductionStatus::READY_FOR_DELIVERY;
+        $past->due_date = \Carbon\CarbonImmutable::now('Africa/Cairo')->subDay()->toDateString();
+        $past->save();
+
+        $delivered = $this->draft();
+        $delivered->status = OrderStatus::CONFIRMED;
+        $delivered->production_status = \Modules\Orders\Enums\OrderProductionStatus::READY_FOR_DELIVERY;
+        $delivered->due_date = $today;
+        $delivered->delivered_at = now();
+        $delivered->save();
+
+        $canceled = $this->draft();
+        $canceled->status = OrderStatus::CANCELLED;
+        $canceled->production_status = \Modules\Orders\Enums\OrderProductionStatus::READY_FOR_DELIVERY;
+        $canceled->due_date = $today;
+        $canceled->save();
+
+        $list = $this->getJson('/api/v1/orders?filter[readyDueToday]=1')
+            ->assertOk()->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.orders.0.id', $ready->id);
+        $this->assertSame([$ready->id], array_column($list->json('data.orders'), 'id'));
+        $this->getJson('/api/v1/dashboard')->assertOk()
+            ->assertJsonPath('data.metrics.readyDueToday', 1)
+            ->assertJsonPath('data.metrics.dueToday', 2);
+        $this->getJson('/api/v1/orders?filter[readyDueToday]=invalid')->assertUnprocessable()
+            ->assertJsonValidationErrors('filter.readyDueToday');
     }
 
     public function test_draft_deletion_is_soft_and_only_admin_can_delete(): void
