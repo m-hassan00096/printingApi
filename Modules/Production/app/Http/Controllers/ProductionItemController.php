@@ -19,7 +19,7 @@ class ProductionItemController extends Controller
     {
         return ApiResponse::success(data: $query->items(
             $request->validated('filter', []), (int) $request->input('page', 1),
-            (int) $request->input('perPage', 20), $request->input('sort', 'dueDate'),
+            (int) $request->input('perPage', 20), $request->input('sort', 'priority'),
             (int) $request->user()->getKey(),
         ));
     }

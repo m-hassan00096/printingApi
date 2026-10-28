@@ -382,6 +382,42 @@ class ProductionApiTest extends OrdersTestCase
             ->assertJsonPath('data.notStartedCount', 1);
     }
 
+    public function test_operational_priority_sorts_overdue_then_today_then_upcoming_then_unscheduled(): void
+    {
+        $today = \Carbon\CarbonImmutable::now('Africa/Cairo');
+        $future = $this->confirmed(['dueDate' => $today->addDays(2)->toDateString()]);
+        $none = $this->confirmed();
+        $todayOrder = $this->confirmed(['dueDate' => $today->toDateString()]);
+        $overdue = $this->confirmed(['dueDate' => $today->subDays(2)->toDateString()]);
+
+        $items = $this->getJson('/api/v1/production/items?filter[column]=0&sort=priority')
+            ->assertOk()->json('data.items');
+        $this->assertSame([
+            $this->item($overdue), $this->item($todayOrder),
+            $this->item($future), $this->item($none),
+        ], array_column($items, 'id'));
+
+        $this->getJson('/api/v1/production/items?filter[column]=0&sort=bad')
+            ->assertUnprocessable()->assertJsonValidationErrors('sort');
+    }
+
+    public function test_priority_prefers_unfinished_design_over_completed_at_same_due_date(): void
+    {
+        $date = \Carbon\CarbonImmutable::now('Africa/Cairo')->addDay()->toDateString();
+        $completed = $this->confirmed(['dueDate' => $date]);
+        $completedId = $this->item($completed);
+        $this->action($completedId, 'start-design')->assertOk();
+        $this->action($completedId, 'complete-design')->assertOk();
+
+        $working = $this->confirmed(['dueDate' => $date]);
+        $workingId = $this->item($working);
+        $this->action($workingId, 'start-design')->assertOk();
+
+        $result = $this->getJson('/api/v1/production/items?filter[column]=1&sort=priority')
+            ->assertOk()->json('data.items');
+        $this->assertSame([$workingId, $completedId], array_column($result, 'id'));
+    }
+
     public function test_service_filter_applies_to_board_summary_and_is_composable(): void
     {
         $order = $this->confirmed(['items' => [
