@@ -388,7 +388,9 @@ class ProductionApiTest extends OrdersTestCase
         $future = $this->confirmed(['dueDate' => $today->addDays(2)->toDateString()]);
         $none = $this->confirmed();
         $todayOrder = $this->confirmed(['dueDate' => $today->toDateString()]);
-        $overdue = $this->confirmed(['dueDate' => $today->subDays(2)->toDateString()]);
+        $overdue = $this->confirmed();
+        $overdue->due_date = $today->subDays(2)->toDateString();
+        $overdue->save();
 
         $items = $this->getJson('/api/v1/production/items?filter[column]=0&sort=priority')
             ->assertOk()->json('data.items');
