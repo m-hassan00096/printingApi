@@ -99,8 +99,10 @@ class DeliveriesApiTest extends OrdersTestCase
             ->assertOk()->assertJsonPath('data.pagination.total', 1)
             ->assertJsonPath('data.orders.0.orderId', $other->id);
 
-        $this->getJson('/api/v1/selects?selects=deliveryCustomers')
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=ready')
             ->assertOk()->assertJsonCount(2, 'data.0.options');
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=history')
+            ->assertOk()->assertJsonCount(0, 'data.0.options');
 
         $this->deliver($ready)->assertOk();
         $this->getJson('/api/v1/deliveries?filter[customerId]='.$ready->customer_id)
@@ -109,8 +111,24 @@ class DeliveriesApiTest extends OrdersTestCase
             ->assertOk()->assertJsonPath('data.pagination.total', 0);
         $this->getJson('/api/v1/deliveries?filter[customerId]=bad')
             ->assertUnprocessable()->assertJsonValidationErrors('filter.customerId');
-        $this->getJson('/api/v1/selects?selects=deliveryCustomers')
-            ->assertOk()->assertJsonCount(2, 'data.0.options');
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=ready')
+            ->assertOk()->assertJsonCount(1, 'data.0.options');
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=history')
+            ->assertOk()->assertJsonCount(1, 'data.0.options');
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=invalid')
+            ->assertUnprocessable();
+    }
+
+    public function test_delivery_customer_options_respect_tab_permissions(): void
+    {
+        $this->ready();
+        $this->adminRole->revokePermissionTo('deliveries.ready.view');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=ready')
+            ->assertForbidden();
+        $this->getJson('/api/v1/selects?selects=deliveryCustomers&params[deliveryCustomers]=history')
+            ->assertOk()->assertJsonCount(0, 'data.0.options');
     }
 
     public function test_zero_collection_delivery_is_atomic_idempotent_and_prevents_production_changes(): void
