@@ -89,14 +89,8 @@ class DeliveriesApiTest extends OrdersTestCase
     public function test_delivery_customer_select_and_ready_history_filters_use_customer_id(): void
     {
         $ready = $this->ready();
-        $other = $this->ready();
-        $otherCustomer = \Modules\Customers\Models\Customer::query()->create([
-            'name' => 'Second Recipient', 'phone' => '01111117777', 'status' => 1,
-        ]);
-        $other->customer_id = $otherCustomer->id;
-        $other->customer_name_snapshot = $otherCustomer->name;
-        $other->customer_phone_snapshot = $otherCustomer->phone;
-        $other->save();
+        $otherCustomer = $this->secondCustomer;
+        $other = $this->ready(['customerId' => $otherCustomer->id]);
 
         $this->getJson('/api/v1/deliveries/ready?filter[customerId]='.$ready->customer_id)
             ->assertOk()->assertJsonPath('data.pagination.total', 1)
