@@ -1,0 +1,47 @@
+name: PHP 8.2 Laravel 12 compatibility
+
+on:
+  push:
+    branches:
+      - feature/php82-laravel12-compat
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-and-test:
+    name: PHP 8.2 Composer resolve and full SQLite regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, dom, xml, simplexml, pdo_sqlite, sqlite3, pdo_mysql
+          tools: composer:v2
+          coverage: none
+      - name: Resolve and install Laravel 12 dependencies for PHP 8.2
+        run: composer update --with-all-dependencies --prefer-dist --no-interaction --no-progress
+      - name: Validate lock and real PHP 8.2 platform requirements
+        run: |
+          composer validate --strict
+          composer check-platform-reqs
+          php artisan --version
+      - name: Run application regression under PHP 8.2
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+          php artisan test
+      - name: Commit validated composer.lock to compatibility branch
+        if: success()
+        run: |
+          if ! git diff --quiet -- composer.lock; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add composer.lock
+            git commit -m "build(compat): lock tested Laravel 12 dependencies for PHP 8.2"
+            git push origin HEAD:feature/php82-laravel12-compat
+          fi
