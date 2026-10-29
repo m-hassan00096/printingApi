@@ -1,9 +1,9 @@
 <?php
 namespace Modules\Production\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
+use App\Providers\ApiModuleServiceProvider;
 
-class ProductionServiceProvider extends ModuleServiceProvider
+class ProductionServiceProvider extends ApiModuleServiceProvider
 {
     protected string $name = 'Production';
     protected string $nameLower = 'production';
