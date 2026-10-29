@@ -45,3 +45,49 @@ jobs:
             git commit -m "build(compat): lock tested Laravel 12 dependencies for PHP 8.2"
             git push origin HEAD:feature/php82-laravel12-compat
           fi
+
+  mysql-finance:
+    name: PHP 8.2 MySQL 8 Finance and migration checks
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: tabaa_php82_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      APP_ENV: testing
+      DB_CONNECTION: mysql
+      DB_HOST: 127.0.0.1
+      DB_PORT: '3306'
+      DB_DATABASE: tabaa_php82_ci
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      CACHE_STORE: array
+      SESSION_DRIVER: array
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: mbstring, intl, dom, xml, simplexml, pdo_mysql, pdo_sqlite, sqlite3
+          tools: composer:v2
+          coverage: none
+      - name: Install locked PHP 8.2 dependencies
+        run: |
+          composer install --prefer-dist --no-interaction --no-progress
+          composer check-platform-reqs
+          php artisan --version
+      - name: Validate database migrations and Finance invariants on MySQL
+        run: |
+          cp .env.example .env
+          php artisan key:generate --force
+          php artisan migrate:fresh --force
+          php artisan test Modules/Finance/tests/Feature
