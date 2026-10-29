@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/finance
+      - feature/finance-accounts-ux
   pull_request:
     branches:
       - develop
