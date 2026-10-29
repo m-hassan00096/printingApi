@@ -99,3 +99,15 @@ Deliveries later will consume an internal Finance posting contract and call it i
 - Ledger Eloquent model rejects updates and deletes after posting. Corrections are new opposite entries; no financial mutations through controllers.
 - In rare concurrent deactivation after Request validation, Finance rechecks the selected destination under lock and returns business conflict; Request never substitutes for transaction safety.
 - Cancel order reverses the amount of its original posted liability, not a second copy of the order total.
+
+
+## 9. Atomic collection amount correction (October 29, 2026)
+
+- `POST /api/v1/finance/collections/{collection}/correct`, permission `finance.collections.correct`, requires `Idempotency-Key` header. Request: `{ "amount": "300.00", "reason": "Incorrect recorded deposit", "confirmCreditBalance": false }` (the credit acknowledgment is optional and used for delivery-source corrections).
+- Positive amount: reverse the original posted receipt, create a replacement retaining `source`, `orderId`, `paymentMethod`, destination snapshot, customer snapshot and original `collectedOn`; `corrected_from_id` and `corrected_to_id` link the full audit chain. Zero amount: reverse only, response `{id:null,receiptNumber:null}`.
+- Financial reversal, replacement posting, correction links, and delivery `collection_id` relink occur in a single DB transaction; original receipt is never deleted. Lock order, then delivery, then customer and receipt, matching the delivery cancellation flow; retries are idempotent.
+- A corrected **delivery** points to its replacement receipt so subsequent delivery cancellation reverses only the currently linked amount. Zero-amount delivery correction leaves the reversed original linked for audit and later cancellation skips its already-reversed effect. Canceled deliveries and already-reversed receipts cannot be corrected.
+- The correction retains the historical payment destination snapshot even if that bank/wallet has since been deactivated. No bank transfer or refund is initiated; `/refunds` handles actual customer refunds.
+- `GET /finance/collections` and `GET /finance/collections/{id}` additionally expose `orderNumber` (nullable), `correctedFromId`, and `correctedToId`. Order references include soft-deleted order snapshots via read-only Eloquent lookup.
+- New migration: `2026_10_29_000001_add_collection_corrections.php`. Seed `FinanceDatabaseSeeder` to add permission and sync admin role.
+- Regression tests cover general/deposit/delivery and subsequent cancellation, zero corrections, idempotency, role permission, validation and historical bank destination.
