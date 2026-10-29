@@ -111,3 +111,12 @@ Deliveries later will consume an internal Finance posting contract and call it i
 - `GET /finance/collections` and `GET /finance/collections/{id}` additionally expose `orderNumber` (nullable), `correctedFromId`, and `correctedToId`. Order references include soft-deleted order snapshots via read-only Eloquent lookup.
 - New migration: `2026_10_29_000001_add_collection_corrections.php`. Seed `FinanceDatabaseSeeder` to add permission and sync admin role.
 - Regression tests cover general/deposit/delivery and subsequent cancellation, zero corrections, idempotency, role permission, validation and historical bank destination.
+
+
+## Customer accounts and statements refinement (2026-10-29)
+
+- Existing list `GET /finance/customer-balances` already implements grouped ledger amounts, pagination, debit/credit/zero filtering, search by customer name/phone, and balance/name sorting. The frontend now uses it as the account overview without making per-customer N+1 requests.
+- `GET /finance/customers/{customer}/balance` adds `openingBalance: null | {amount, type, typeLabel}` (from the one immutable opening ledger entry); `openingBalanceExists` and the current total balance remain unchanged.
+- `GET /finance/customers/{customer}/ledger` adds `orderNumber`, `receiptNumber`, `refundNumber` nullable human-readable references next to existing foreign keys. They use read-only left joins and do not affect arithmetic, historical running-balance windows, sorting, filters, or posting logic.
+- `GET /finance/refunds` accepts optional `filter[customerId]` (positive integer); it scopes refunds by customer **before** pagination and search. User authorization remains enforced through `finance.refunds.view`; no additional refund data is exposed.
+- Regression tests assert the value and type of opening balance, true receipt reference on reversal, correct customer filtering and invalid filter rejection. Existing ledger total consistency is preserved.
