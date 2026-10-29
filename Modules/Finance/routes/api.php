@@ -24,6 +24,8 @@ Route::middleware('auth:sanctum')->prefix('v1/finance')->group(function (): void
         ->middleware('permission:finance.collections.create');
     Route::get('collections/{collection}', [CollectionController::class, 'show'])
         ->middleware('permission:finance.collections.view');
+    Route::post('collections/{collection}/correct', [CollectionController::class, 'correct'])
+        ->middleware('permission:finance.collections.correct');
     Route::post('collections/{collection}/reverse', [CollectionController::class, 'reverse'])
         ->middleware('permission:finance.collections.reverse');
 

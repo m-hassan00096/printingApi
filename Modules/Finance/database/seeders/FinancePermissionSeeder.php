@@ -11,7 +11,7 @@ class FinancePermissionSeeder extends Seeder
     {
         foreach ([
             'balances.view', 'ledger.view', 'opening_balances.create',
-            'collections.view', 'collections.create', 'collections.reverse',
+            'collections.view', 'collections.create', 'collections.reverse', 'collections.correct',
             'refunds.view', 'refunds.create',
         ] as $name) {
             $permission = Permission::firstOrCreate(['name' => 'finance.'.$name, 'guard_name' => 'web']);
