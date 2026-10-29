@@ -2,9 +2,9 @@
 
 namespace Modules\PrintingServices\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
+use App\Providers\ApiModuleServiceProvider;
 
-class PrintingServicesServiceProvider extends ModuleServiceProvider
+class PrintingServicesServiceProvider extends ApiModuleServiceProvider
 {
     protected string $name = 'PrintingServices';
 
