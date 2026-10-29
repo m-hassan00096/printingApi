@@ -8,6 +8,8 @@ use Modules\Deliveries\Models\Delivery;
 use Modules\Finance\Enums\CollectionSource;
 use Modules\Finance\Enums\CollectionStatus;
 use Modules\Finance\Models\Collection;
+use Modules\Settings\Models\BankAccount;
+use Modules\Settings\Enums\PaymentDestinationStatus;
 use Modules\Identity\Models\Permission;
 use Modules\Orders\Enums\OrderProductionStatus;
 use Modules\Orders\Tests\Feature\Support\OrdersTestCase;
@@ -128,6 +130,30 @@ class CollectionCorrectionTest extends OrdersTestCase
         $this->assertSame(CollectionStatus::REVERSED, Collection::findOrFail($newId)->status);
         $this->assertDatabaseCount('finance_ledger_entries', 5);
         $this->correct($oldId, '20.00', 'cannot-correct-old')->assertStatus(409);
+    }
+
+    public function test_correction_preserves_historical_bank_account_even_after_deactivation(): void
+    {
+        $bank = BankAccount::query()->create([
+            'bank_name' => 'Historical Bank',
+            'account_number' => '1122334455',
+            'is_default' => false, 'status' => PaymentDestinationStatus::ACTIVE,
+        ]);
+        $oldId = $this->withHeader('Idempotency-Key', 'historical-bank')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $this->customer->id, 'amount' => '100.00',
+                'paymentMethod' => 1, 'paymentDestinationId' => $bank->id,
+            ])->assertCreated()->json('data.id');
+        $bank->status = PaymentDestinationStatus::INACTIVE;
+        $bank->save();
+        $newId = $this->correct($oldId, '70.00', 'historical-bank-correct')->assertOk()
+            ->json('data.id');
+        $old = Collection::findOrFail($oldId);
+        $new = Collection::findOrFail($newId);
+        $this->assertSame($old->bank_account_id, $new->bank_account_id);
+        $this->assertSame($old->destination_snapshot, $new->destination_snapshot);
+        $this->assertSame($old->customer_name_snapshot, $new->customer_name_snapshot);
+        $this->assertDatabaseCount('finance_ledger_entries', 3);
     }
 
     public function test_correction_validation_permissions_and_unchanged_amount(): void
