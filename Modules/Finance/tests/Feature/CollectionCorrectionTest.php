@@ -68,18 +68,17 @@ class CollectionCorrectionTest extends OrdersTestCase
         $this->correct($oldId, '100.00', 'different-key')->assertStatus(409);
     }
 
-    public function test_zero_correction_keeps_only_original_reversed_receipt(): void
+    public function test_zero_correction_is_rejected_without_financial_changes(): void
     {
         $oldId = $this->withHeader('Idempotency-Key', 'zero-original')
             ->postJson('/api/v1/finance/collections', [
                 'customerId' => $this->customer->id, 'amount' => '75.00', 'paymentMethod' => 0,
             ])->assertCreated()->json('data.id');
-        $this->correct($oldId, '0.00', 'zero-correct')->assertOk()
-            ->assertJsonPath('data.id', null);
-        $this->correct($oldId, '0.00', 'zero-correct')->assertOk();
+        $this->correct($oldId, '0.00', 'zero-correct')->assertUnprocessable()
+            ->assertJsonValidationErrors('amount');
         $this->assertDatabaseCount('finance_collections', 1);
-        $this->assertDatabaseCount('finance_ledger_entries', 2);
-        $this->assertSame(CollectionStatus::REVERSED, Collection::findOrFail($oldId)->status);
+        $this->assertDatabaseCount('finance_ledger_entries', 1);
+        $this->assertSame(CollectionStatus::POSTED, Collection::findOrFail($oldId)->status);
     }
 
     public function test_deposit_correction_preserves_order_reference_and_uses_real_order_number(): void
