@@ -2,10 +2,10 @@
 
 namespace Modules\Identity\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
+use App\Providers\ApiModuleServiceProvider;
 use Illuminate\Console\Scheduling\Schedule;
 
-class IdentityServiceProvider extends ModuleServiceProvider
+class IdentityServiceProvider extends ApiModuleServiceProvider
 {
     /**
      * The name of the module.

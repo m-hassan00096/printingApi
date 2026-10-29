@@ -2,9 +2,9 @@
 
 namespace Modules\Settings\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
+use App\Providers\ApiModuleServiceProvider;
 
-class SettingsServiceProvider extends ModuleServiceProvider
+class SettingsServiceProvider extends ApiModuleServiceProvider
 {
     protected string $name = 'Settings';
 

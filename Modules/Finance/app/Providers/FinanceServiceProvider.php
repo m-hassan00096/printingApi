@@ -1,9 +1,9 @@
 <?php
 namespace Modules\Finance\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
+use App\Providers\ApiModuleServiceProvider;
 
-class FinanceServiceProvider extends ModuleServiceProvider
+class FinanceServiceProvider extends ApiModuleServiceProvider
 {
     protected string $name = 'Finance';
     protected string $nameLower = 'finance';
