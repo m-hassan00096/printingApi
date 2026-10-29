@@ -1,9 +1,9 @@
 <?php
 namespace Modules\Orders\Providers;
 
-use Nwidart\Modules\Support\ModuleServiceProvider;
+use App\Providers\ApiModuleServiceProvider;
 
-class OrdersServiceProvider extends ModuleServiceProvider
+class OrdersServiceProvider extends ApiModuleServiceProvider
 {
     protected string $name = 'Orders';
     protected string $nameLower = 'orders';
