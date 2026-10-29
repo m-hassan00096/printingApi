@@ -90,7 +90,11 @@ class FinanceApiTest extends OrdersTestCase
         $this->getJson("/api/v1/finance/customers/{$other}/opening-balance-status")->assertOk()
             ->assertJsonPath('data.openingBalanceExists', false);
         $this->getJson("/api/v1/finance/customers/{$id}/balance")->assertOk()
-            ->assertJsonPath('data.openingBalanceExists', true);
+            ->assertJsonPath('data.openingBalanceExists', true)
+            ->assertJsonPath('data.openingBalance.amount', '1200.00')
+            ->assertJsonPath('data.openingBalance.type', 1);
+        $this->getJson("/api/v1/finance/customers/{$other}/balance")->assertOk()
+            ->assertJsonPath('data.openingBalance', null);
     }
 
     public function test_ledger_running_balance_stays_unfiltered_across_pages_and_reversals(): void
@@ -123,8 +127,38 @@ class FinanceApiTest extends OrdersTestCase
             ->assertJsonPath('data.entries.0.runningBalance.amount', '800.00');
         $this->getJson("/api/v1/finance/customers/{$id}/ledger?perPage=1&page=1")->assertOk()
             ->assertJsonPath('data.entries.0.type', 4)
+            ->assertJsonPath('data.entries.0.collectionId', $second->json('data.id'))
+            ->assertJsonPath('data.entries.0.receiptNumber', $second->json('data.receiptNumber'))
+            ->assertJsonPath('data.entries.0.orderNumber', null)
             ->assertJsonPath('data.entries.0.runningBalance.amount', '800.00')
             ->assertJsonPath('data.balance.amount', '800.00');
+    }
+
+    public function test_refund_list_customer_filter_isolated_from_other_customers_and_validated(): void
+    {
+        $one = $this->customer->id;
+        $two = $this->secondCustomer->id;
+        foreach ([$one, $two] as $customer) {
+            $this->withHeader('Idempotency-Key', 'customer-refund-seed-'.$customer)
+                ->postJson('/api/v1/finance/collections', [
+                    'customerId' => $customer, 'amount' => '200.00', 'paymentMethod' => 0,
+                ])->assertCreated();
+            $this->withHeader('Idempotency-Key', 'customer-refund-'.$customer)
+                ->postJson('/api/v1/finance/refunds', [
+                    'customerId' => $customer, 'amount' => '40.00', 'paymentMethod' => 0,
+                    'reason' => 'Return documented amount',
+                ])->assertCreated();
+        }
+        $this->getJson('/api/v1/finance/refunds')->assertOk()
+            ->assertJsonPath('data.pagination.total', 2);
+        $this->getJson('/api/v1/finance/refunds?filter[customerId]='.$one)->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.refunds.0.customerId', $one);
+        $this->getJson('/api/v1/finance/refunds?filter[customerId]='.$two)->assertOk()
+            ->assertJsonPath('data.pagination.total', 1)
+            ->assertJsonPath('data.refunds.0.customerId', $two);
+        $this->getJson('/api/v1/finance/refunds?filter[customerId]=invalid')
+            ->assertUnprocessable()->assertJsonValidationErrors('filter.customerId');
     }
 
     public function test_account_overview_and_opening_eligibility_have_separate_permissions(): void
