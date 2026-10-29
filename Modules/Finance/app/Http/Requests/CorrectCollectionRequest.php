@@ -10,7 +10,7 @@ class CorrectCollectionRequest extends FinanceWriteRequest
     {
         return [
             'amount' => ['required', 'string',
-                'regex:/\A(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,2})?\z/D'],
+                'regex:/\A(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,2})?\z/D', 'not_in:0,0.0,0.00'],
             'reason' => ['required', 'string', 'min:3', 'max:3000'],
             'confirmCreditBalance' => ['sometimes', 'boolean'],
         ];
