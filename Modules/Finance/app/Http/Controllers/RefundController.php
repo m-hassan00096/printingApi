@@ -36,6 +36,7 @@ class RefundController extends Controller
     {
         $filters = $request->validated('filter', []);
         $q = Refund::query();
+        if (isset($filters['customerId'])) $q->where('customer_id', (int) $filters['customerId']);
         if (isset($filters['dateFrom'])) $q->whereDate('refunded_on', '>=', $filters['dateFrom']);
         if (isset($filters['dateTo'])) $q->whereDate('refunded_on', '<=', $filters['dateTo']);
         if (isset($filters['paymentMethod'])) $q->where('payment_method', $filters['paymentMethod']);
