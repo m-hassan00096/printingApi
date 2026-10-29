@@ -10,6 +10,7 @@ class RefundIndexRequest extends FinanceIndexRequest
     {
         return [
             'search' => ['sometimes', 'string', 'max:200'],
+            'customerId' => ['sometimes', 'integer', 'min:1'],
             'dateFrom' => ['sometimes', 'date_format:Y-m-d'],
             'dateTo' => ['sometimes', 'date_format:Y-m-d'],
             'paymentMethod' => ['sometimes', 'integer', Rule::enum(PaymentMethod::class)],
