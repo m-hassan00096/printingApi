@@ -66,7 +66,7 @@ final class CollectionCorrectionService
             }
 
             $oldAmount = Money::positive((string) $locked->amount);
-            $newAmount = Money::cents((string) $data['amount']);
+            $newAmount = Money::positive((string) $data['amount']);
             if ($newAmount === $oldAmount) {
                 throw new FinanceException('correction_unchanged');
             }
