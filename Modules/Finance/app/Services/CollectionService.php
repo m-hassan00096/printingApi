@@ -47,7 +47,7 @@ class CollectionService
         ], CollectionSource::ORDER_DEPOSIT, $actorId);
     }
 
-    public function post(array $data, CollectionSource $source, ?int $actorId): Collection
+    public function post(array $data, CollectionSource $source, ?int $actorId, ?Collection $correctionOf = null): Collection
     {
         $customerId = (int) $data['customerId'];
         $amount = Money::positive($data['amount']);
@@ -56,8 +56,18 @@ class CollectionService
             // The reference may have become invalid after request validation.
             throw new FinanceException('invalid_order');
         }
-        $destination = $this->payments->resolve((int) $data['paymentMethod'], $data['paymentDestinationId'] ?? null);
-        $display = $this->customers->display($customerId);
+        // An accounting correction reuses original immutable payment/customer snapshots.
+        // The bank/wallet may have been deactivated since the original transaction.
+        $destination = $correctionOf === null
+            ? $this->payments->resolve((int) $data['paymentMethod'], $data['paymentDestinationId'] ?? null)
+            : [
+                'bankAccountId' => $correctionOf->bank_account_id,
+                'eWalletId' => $correctionOf->e_wallet_id,
+                'label' => $correctionOf->destination_snapshot,
+            ];
+        $display = $correctionOf === null
+            ? $this->customers->display($customerId)
+            : ['name' => $correctionOf->customer_name_snapshot, 'phone' => $correctionOf->customer_phone_snapshot];
         $collection = Collection::query()->create([
             'receipt_number' => 'p-'.Str::uuid(),
             'customer_id' => $customerId, 'order_id' => $data['orderId'] ?? null,
