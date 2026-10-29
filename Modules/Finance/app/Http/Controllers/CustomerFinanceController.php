@@ -30,7 +30,7 @@ class CustomerFinanceController extends Controller
         return ApiResponse::success(data: ['customerId' => $customer, 'openingBalanceExists' => $this->hasOpening($customer)]);
     }
 
-    private function openingBalance(int $customer): ?array
+    private function openingBalanceSnapshot(int $customer): ?array
     {
         $signed = LedgerEntry::query()->where('customer_id', $customer)
             ->where('type', LedgerEntryType::OPENING_BALANCE->value)->value('signed_amount');
@@ -50,7 +50,7 @@ class CustomerFinanceController extends Controller
     public function balance(int $customer, LedgerService $ledger): JsonResponse
     {
         $this->assertCustomer($customer);
-        $opening = $this->openingBalance($customer);
+        $opening = $this->openingBalanceSnapshot($customer);
         return ApiResponse::success(data: ['customerId' => $customer] + $ledger->balance($customer)
             + ['openingBalanceExists' => $opening !== null, 'openingBalance' => $opening]);
     }
