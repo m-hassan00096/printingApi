@@ -15,16 +15,18 @@ use Modules\Finance\Http\Requests\CollectionIndexRequest;
 use Modules\Finance\Http\Requests\CollectionSummaryRequest;
 use Modules\Finance\Http\Requests\StoreCollectionRequest;
 use Modules\Finance\Http\Requests\ReverseCollectionRequest;
+use Modules\Finance\Http\Requests\CorrectCollectionRequest;
 use Modules\Finance\Http\Resources\CollectionResource;
 use Modules\Finance\Models\Collection;
 use Modules\Finance\Services\CollectionService;
+use Modules\Finance\Services\CollectionCorrectionService;
 use Modules\Finance\Services\IdempotencyService;
 
 class CollectionController extends Controller
 {
     public function index(CollectionIndexRequest $request): JsonResponse
     {
-        $p = $this->query($request)->paginate((int) $request->input('perPage', 20));
+        $p = $this->query($request)->with('order:id,order_number')->paginate((int) $request->input('perPage', 20));
         return ApiResponse::success(data: [
             'collections' => CollectionResource::collection($p->getCollection())->resolve($request),
             'pagination' => ['currentPage' => $p->currentPage(), 'lastPage' => $p->lastPage(),
@@ -54,7 +56,7 @@ class CollectionController extends Controller
 
     public function show(Collection $collection, Request $request): JsonResponse
     {
-        return ApiResponse::success(data: (new CollectionResource($collection))->resolve($request));
+        return ApiResponse::success(data: (new CollectionResource($collection->load('order:id,order_number')))->resolve($request));
     }
 
     public function store(StoreCollectionRequest $request, CollectionService $service): JsonResponse
@@ -72,6 +74,17 @@ class CollectionController extends Controller
         $data = $request->validated();
         $service->reverse($collection, $data['reason'], (int) $request->user()->id, $request->idempotencyHash());
         return ApiResponse::success(message: __('finance.messages.collection_reversed'));
+    }
+
+    public function correct(Collection $collection, CorrectCollectionRequest $request, CollectionCorrectionService $service): JsonResponse
+    {
+        $replacement = $service->correct(
+            $collection, $request->validated(), (int) $request->user()->id, $request->idempotencyHash()
+        );
+        return ApiResponse::success(
+            data: ['id' => $replacement?->id, 'receiptNumber' => $replacement?->receipt_number],
+            message: __('finance.messages.collection_corrected'),
+        );
     }
 
     private function query(FinanceIndexRequest $request): \Illuminate\Database\Eloquent\Builder
