@@ -56,9 +56,40 @@ class OperationalStaffSeeder extends Seeder
 
     public function run(): void
     {
+        $accounts = [
+            'user1' => ['مصمم 1', 'designers'],
+            'user2' => ['مصمم 2', 'designers'],
+            'user3' => ['موظف استقبال', 'reception'],
+        ];
+
+        $existing = User::withTrashed()
+            ->whereIn('username', array_keys($accounts))
+            ->get()
+            ->keyBy('username');
+
+        foreach ($accounts as $username => [, $roleName]) {
+            $user = $existing->get($username);
+
+            if ($user === null) {
+                continue;
+            }
+
+            if ($user->trashed()) {
+                throw new RuntimeException(
+                    "The username {$username} belongs to a soft-deleted account; resolve it manually."
+                );
+            }
+
+            if ($user->getRoleNames()->all() !== [$roleName]) {
+                throw new RuntimeException(
+                    "The username {$username} already exists with another role; resolve it manually."
+                );
+            }
+        }
+
         $password = (string) (getenv('TABAA_STAFF_INITIAL_PASSWORD') ?: '');
 
-        if (strlen($password) < 8) {
+        if ($existing->count() < count($accounts) && strlen($password) < 8) {
             throw new RuntimeException(
                 'Set TABAA_STAFF_INITIAL_PASSWORD to an initial password with at least eight characters.'
             );
@@ -83,7 +114,7 @@ class OperationalStaffSeeder extends Seeder
             );
         }
 
-        DB::transaction(function () use ($password, $permissions): void {
+        DB::transaction(function () use ($password, $permissions, $accounts): void {
             $roles = [];
 
             foreach ([
@@ -120,11 +151,7 @@ class OperationalStaffSeeder extends Seeder
                 $roles[$roleName] = $role;
             }
 
-            foreach ([
-                'user1' => ['مصمم 1', 'designers'],
-                'user2' => ['مصمم 2', 'designers'],
-                'user3' => ['موظف استقبال', 'reception'],
-            ] as $username => [$name, $roleName]) {
+            foreach ($accounts as $username => [$name, $roleName]) {
                 $user = User::withTrashed()->where('username', $username)->first();
 
                 if ($user === null) {
