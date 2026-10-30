@@ -149,6 +149,8 @@ class OperationalStaffSeederTest extends TestCase
         $user->update(['password' => 'changed-password-456']);
         $newHash = $user->fresh()->password;
 
+        // Once the users have been created, the initialization secret can be removed.
+        putenv('TABAA_STAFF_INITIAL_PASSWORD');
         $this->seed(OperationalStaffSeeder::class);
 
         $this->assertDatabaseCount('users', 3);
@@ -168,6 +170,30 @@ class OperationalStaffSeederTest extends TestCase
 
         $this->assertDatabaseCount('users', 0);
         $this->assertDatabaseCount('roles', 0);
+    }
+
+    public function test_an_existing_account_with_another_role_is_rejected_without_changes(): void
+    {
+        $admin = Role::create(['name' => 'some-other-role', 'guard_name' => 'web']);
+
+        $user = User::create([
+            'username' => 'user1',
+            'name' => 'Existing user',
+            'password' => 'existing-secret-456',
+            'status' => UserStatus::ACTIVE,
+        ]);
+        $user->assignRole($admin);
+
+        try {
+            $this->seed(OperationalStaffSeeder::class);
+            $this->fail('Expected an existing account conflict to be rejected.');
+        } catch (RuntimeException $exception) {
+            $this->assertStringContainsString('already exists with another role', $exception->getMessage());
+        }
+
+        $this->assertDatabaseCount('users', 1);
+        $this->assertDatabaseCount('roles', 1);
+        $this->assertSame(['some-other-role'], $user->fresh()->getRoleNames()->all());
     }
 
     private function actingAsStaff(User $user): void
