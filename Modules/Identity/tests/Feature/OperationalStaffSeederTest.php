@@ -106,7 +106,7 @@ class OperationalStaffSeederTest extends TestCase
         $this->assertFalse($user->can('customers.create'));
     }
 
-    public function test_reception_can_manage_customers_deliveries_and_collections_without_extra_permissions(): void
+    public function test_reception_can_create_and_manage_orders_customers_deliveries_and_collections(): void
     {
         $this->seed(OperationalStaffSeeder::class);
 
@@ -115,22 +115,34 @@ class OperationalStaffSeederTest extends TestCase
 
         $this->getJson('/api/v1/customers')->assertOk();
         $this->getJson('/api/v1/orders')->assertOk();
+        $this->getJson('/api/v1/dashboard')->assertOk();
         $this->getJson('/api/v1/deliveries/ready')->assertOk();
         $this->getJson('/api/v1/deliveries')->assertOk();
         $this->getJson('/api/v1/finance/collections')->assertOk();
+        $this->getJson('/api/v1/selects?selects=activeCustomers,printingServices,bankAccounts,eWallets')->assertOk();
+
+        // Permission gates allow the request to reach business validation.
+        $this->postJson('/api/v1/orders', [], [
+            'Idempotency-Key' => 'staff-order-test',
+        ])->assertUnprocessable();
+        $this->postJson('/api/v1/finance/collections', [])->assertUnprocessable();
 
         foreach ([
             'customers.view', 'customers.create', 'customers.update',
+            'orders.list', 'orders.view', 'orders.create', 'orders.update',
+            'orders.items.create', 'orders.items.update', 'orders.items.delete',
+            'orders.files.upload', 'orders.files.list', 'orders.files.view', 'orders.files.delete',
+            'orders.activities.view', 'orders.confirm',
+            'printing_services.price_preview.view',
             'deliveries.ready.view', 'deliveries.list', 'deliveries.view', 'deliveries.create',
-            'finance.collections.view', 'finance.collections.create',
+            'finance.balances.view', 'finance.collections.view', 'finance.collections.create',
             'finance.collections.reverse', 'finance.collections.correct',
-            'orders.list', 'orders.view',
         ] as $granted) {
             $this->assertTrue($user->can($granted), $granted);
         }
 
         foreach ([
-            'customers.delete', 'orders.create', 'orders.update', 'orders.confirm',
+            'customers.delete', 'orders.delete', 'orders.cancel',
             'deliveries.cancel', 'finance.refunds.create',
             'finance.opening_balances.create', 'identity.users.create',
             'production.design.start',
