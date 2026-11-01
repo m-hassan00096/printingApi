@@ -7,6 +7,7 @@ use Modules\PrintingServices\Http\Requests\Concerns\LocalizedPrintingServiceVali
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
 use Modules\PrintingServices\Enums\PrintingServiceStatus;
+use Modules\PrintingServices\Enums\PricingMethod;
 use Modules\PrintingServices\Http\Requests\Concerns\ValidatesServiceName;
 use Modules\PrintingServices\Http\Requests\Concerns\ValidatesTierData;
 use Modules\PrintingServices\Support\Money;
@@ -30,9 +31,10 @@ class StorePrintingServiceRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'pricingMethod' => ['sometimes', 'required', 'string', Rule::enum(PricingMethod::class)],
             'name' => ['required', 'string', 'max:150', $this->uniqueLiveName()],
             'basePrice' => ['sometimes', 'nullable', function ($attr, $value, $fail): void {
-                if (! Money::valid($value, true)) {
+                if (! Money::validRate($value, true, $this->input('pricingMethod', 'quantity'))) {
                     $fail(__('printing_services.messages.base_price_invalid'));
                 }
             }],
