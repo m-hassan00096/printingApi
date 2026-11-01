@@ -114,13 +114,17 @@ class DraftOrderService
             $oldTotal = (string) $item->agreed_total;
 
             if (array_key_exists('serviceId', $data)
-                || array_key_exists('quantity', $data)) {
+                || array_key_exists('quantity', $data)
+                || array_key_exists('widthCm', $data)
+                || array_key_exists('heightCm', $data)) {
                 $service = $this->pricing->activeService(
                     (int) ($data['serviceId'] ?? $item->printing_service_id),
                 );
 
                 $updated = [
                     'quantity' => $data['quantity'] ?? $item->quantity,
+                    'widthCm' => array_key_exists('widthCm', $data) ? $data['widthCm'] : $item->width_cm,
+                    'heightCm' => array_key_exists('heightCm', $data) ? $data['heightCm'] : $item->height_cm,
                     'agreedTotal' => $data['agreedTotal'] ?? $item->agreed_total,
                     'specifications' => $data['specifications'] ?? $item->specifications,
                 ];
