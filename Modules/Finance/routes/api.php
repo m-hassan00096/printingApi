@@ -1,6 +1,7 @@
 <?php
 use Illuminate\Support\Facades\Route;
 use Modules\Finance\Http\Controllers\CustomerFinanceController;
+use Modules\Finance\Http\Controllers\CustomerSettlementController;
 use Modules\Finance\Http\Controllers\CollectionController;
 use Modules\Finance\Http\Controllers\RefundController;
 
@@ -12,6 +13,8 @@ Route::middleware('auth:sanctum')->prefix('v1/finance')->group(function (): void
     Route::get('customers/{customer}/balance', [CustomerFinanceController::class, 'balance'])
         ->middleware('permission:finance.balances.view');
     Route::get('customers/{customer}/ledger', [CustomerFinanceController::class, 'ledger'])
+        ->middleware('permission:finance.ledger.view');
+    Route::get('customers/{customer}/settlement', [CustomerSettlementController::class, 'show'])
         ->middleware('permission:finance.ledger.view');
     Route::post('customers/{customer}/opening-balance', [CustomerFinanceController::class, 'openingBalance'])
         ->middleware('permission:finance.opening_balances.create');
