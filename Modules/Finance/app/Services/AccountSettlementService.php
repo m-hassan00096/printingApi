@@ -49,8 +49,8 @@ final class AccountSettlementService
             if ($due > 0 && $amount === 0) {
                 throw ValidationException::withMessages(['amount' => __('settlements.payment_required')]);
             }
-            // A second click with a different key must not create another receipt.
-            // An already-paid unchanged scope can reuse its existing evidence record.
+            // Re-reading and locking the customer's account makes a new-key
+            // duplicate harmless too, not only an HTTP retry with the same key.
             $previous = DB::table('finance_account_settlements')->where('customer_id', $customerId)
                 ->where('scope_to', $data['dateTo'])->where('after_hash', $before['previewHash'])
                 ->orderByDesc('id')->lockForUpdate()->first();
@@ -79,7 +79,6 @@ final class AccountSettlementService
                     'customerId' => $customerId, 'amount' => Money::format($amount),
                     'paymentMethod' => (int) $data['paymentMethod'],
                     'paymentDestinationId' => $data['paymentDestinationId'] ?? null,
-                    // Actual cash is recorded today, never backdated to a report cutoff.
                     'collectedOn' => $today,
                     'note' => __('settlements.collection_note', ['number' => $number])
                         .(! empty($data['note']) ? ' - '.$data['note'] : ''),
@@ -127,13 +126,14 @@ final class AccountSettlementService
                     })->orWhere('type', LedgerEntryType::REFUND->value);
             })->exists();
         $status = $review ? 'needs_review' : $row->status;
+        $money = static fn ($value): string => Money::format(Money::cents((string) $value));
         $result = [
             'id' => (int) $row->id, 'number' => $row->settlement_number,
             'customerId' => (int) $row->customer_id, 'dateTo' => $row->scope_to, 'settledOn' => $row->settled_on,
             'status' => $status, 'originalStatus' => $row->status, 'statusLabel' => __('settlements.status.'.$status),
             'needsReview' => $review,
-            'balanceBefore' => (string) $row->balance_before, 'amountCollected' => (string) $row->collected_amount,
-            'balanceAfter' => (string) $row->balance_after, 'accountBalanceAfter' => (string) $row->account_balance_after,
+            'balanceBefore' => $money($row->balance_before), 'amountCollected' => $money($row->collected_amount),
+            'balanceAfter' => $money($row->balance_after), 'accountBalanceAfter' => $money($row->account_balance_after),
             'collectionId' => $row->collection_id === null ? null : (int) $row->collection_id,
             'receiptNumber' => $snapshot['receiptNumber'], 'createdAt' => $row->created_at,
             'createdBy' => (int) $row->created_by, 'note' => $row->note,
