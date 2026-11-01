@@ -36,6 +36,15 @@ class StorePrintingServiceRequest extends FormRequest
                     $fail(__('printing_services.messages.base_price_invalid'));
                 }
             }],
+            'costPrice' => ['sometimes', 'nullable', function ($attr, $value, $fail): void {
+                if (! is_string($value) && ! is_int($value)) {
+                    $fail(__('printing_services.messages.cost_price_invalid'));
+                    return;
+                }
+                if (! preg_match('/\A(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,2})?\z/D', (string) $value)) {
+                    $fail(__('printing_services.messages.cost_price_invalid'));
+                }
+            }],
             'status' => ['required', 'integer', Rule::enum(PrintingServiceStatus::class)],
             'priceTiers' => ['sometimes', 'array'],
             'priceTiers.*' => ['required', 'array:customerTypeId,minQuantity,maxQuantity,price'],

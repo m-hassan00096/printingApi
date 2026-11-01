@@ -12,12 +12,13 @@ class PrintingService extends Model
 {
     use SoftDeletes, CreatedUpdatedBy;
 
-    protected $fillable = ['name', 'base_price', 'status'];
+    protected $fillable = ['name', 'base_price', 'cost_price', 'status'];
 
     protected function casts(): array
     {
         return [
             'base_price' => 'decimal:2',
+            'cost_price' => 'decimal:2',
             'status' => PrintingServiceStatus::class,
         ];
     }

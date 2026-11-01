@@ -21,6 +21,7 @@ class OrderItem extends Model
         return [
             'quantity' => 'integer',
             'agreed_total' => 'decimal:2',
+            'unit_cost_snapshot' => 'decimal:2',
             'production_stage' => OrderItemStage::class,
         ];
     }

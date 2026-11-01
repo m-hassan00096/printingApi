@@ -35,6 +35,20 @@ class PrintingServicesCrudTest extends PrintingServiceTestCase
         $this->assertDatabaseCount('printing_service_price_tiers', 2);
     }
 
+    public function test_service_unit_cost_can_be_recorded_changed_and_validated(): void
+    {
+        $created = $this->postJson('/api/v1/printing-services', $this->payload(['costPrice' => '4.25']))
+            ->assertCreated()->assertJsonPath('data.costPrice', '4.25');
+        $id = $created->json('data.id');
+
+        $this->patchJson('/api/v1/printing-services/'.$id, ['costPrice' => '5.50'])
+            ->assertOk()->assertJsonPath('data.costPrice', '5.50');
+        $this->assertDatabaseHas('printing_services', ['id' => $id, 'cost_price' => '5.50']);
+        $this->patchJson('/api/v1/printing-services/'.$id, ['costPrice' => '-1'])
+            ->assertUnprocessable()->assertJsonValidationErrors('costPrice');
+        $this->assertDatabaseHas('printing_services', ['id' => $id, 'cost_price' => '5.50']);
+    }
+
     public function test_service_names_are_case_sensitive_and_normalized(): void
     {
         $this->postJson('/api/v1/printing-services', $this->payload())->assertCreated();

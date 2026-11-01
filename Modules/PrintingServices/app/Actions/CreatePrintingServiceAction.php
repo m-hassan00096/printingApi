@@ -22,6 +22,7 @@ class CreatePrintingServiceAction
             $service->fill([
                 'name' => $name,
                 'base_price' => $data['basePrice'] ?? null,
+                'cost_price' => $data['costPrice'] ?? null,
                 'status' => $data['status'],
             ]);
             $service->live_name_hash = ServiceName::hash($name);
