@@ -14,7 +14,7 @@ class PrintingServiceTierResource extends JsonResource
             'customerTypeId' => $this->customer_type_id,
             'minQuantity' => $this->min_quantity,
             'maxQuantity' => $this->max_quantity,
-            'price' => $this->price,
+            'price' => $this->printingService->pricing_method->value === 'quantity' ? bcadd((string) $this->price, '0', 2) : (string) $this->price,
         ];
     }
 }
