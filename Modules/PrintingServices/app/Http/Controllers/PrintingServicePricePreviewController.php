@@ -21,6 +21,8 @@ class PrintingServicePricePreviewController extends Controller
                 $service,
                 isset($data['customerTypeId']) ? (int) $data['customerTypeId'] : null,
                 (int) $data['quantity'],
+                isset($data['widthCm']) ? (string) $data['widthCm'] : null,
+                isset($data['heightCm']) ? (string) $data['heightCm'] : null,
             ),
         );
     }
