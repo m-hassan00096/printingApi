@@ -95,6 +95,7 @@ final class CollectionCorrectionService
                     'paymentDestinationId' => $locked->bank_account_id ?? $locked->e_wallet_id,
                     'collectedOn' => $locked->collected_on->format('Y-m-d'),
                     'note' => $locked->note,
+                    'actualReceiptNumber' => $locked->actual_receipt_number,
                 ], $locked->source, $actorId, $locked);
                 $replacement->corrected_from_id = $locked->id;
                 $replacement->save();

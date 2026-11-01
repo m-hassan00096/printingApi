@@ -18,6 +18,7 @@ class StoreCollectionRequest extends FinanceWriteRequest
             'collectedOn' => ['sometimes', 'date_format:Y-m-d',
                 'before_or_equal:'.now('Africa/Cairo')->toDateString()],
             'note' => ['sometimes', 'nullable', 'string', 'max:5000'],
+            'actualReceiptNumber' => ['sometimes', 'nullable', 'string', 'regex:/\A[0-9]{1,40}\z/D'],
         ];
     }
 

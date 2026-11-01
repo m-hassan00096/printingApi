@@ -10,6 +10,7 @@ class CollectionResource extends JsonResource
     {
         return [
             'id' => $this->id, 'receiptNumber' => $this->receipt_number,
+            'actualReceiptNumber' => $this->actual_receipt_number,
             'customerId' => $this->customer_id, 'customerName' => $this->customer_name_snapshot,
             'customerPhone' => $this->customer_phone_snapshot,
             'orderId' => $this->order_id,

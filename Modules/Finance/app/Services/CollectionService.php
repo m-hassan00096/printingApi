@@ -78,6 +78,7 @@ class CollectionService
             'destination_snapshot' => $destination['label'],
             'collected_on' => $data['collectedOn'] ?? now('Africa/Cairo')->toDateString(),
             'note' => $data['note'] ?? null, 'status' => CollectionStatus::POSTED->value,
+            'actual_receipt_number' => $data['actualReceiptNumber'] ?? null,
             'created_by' => $actorId,
         ]);
         $collection->receipt_number = 'COL-'.now('Africa/Cairo')->format('Y').'-'.str_pad((string) $collection->id, 5, '0', STR_PAD_LEFT);

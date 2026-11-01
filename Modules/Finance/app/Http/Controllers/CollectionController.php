@@ -103,6 +103,7 @@ class CollectionController extends Controller
             $matchingOrders = app(OrderFinanceReference::class)->findOrderIdsByNumber($needle);
             $q->where(function ($where) use ($like, $matchingOrders): void {
                 $where->whereRaw("receipt_number LIKE ? ESCAPE '!'", [$like])
+                    ->orWhereRaw("actual_receipt_number LIKE ? ESCAPE '!'", [$like])
                     ->orWhereRaw("customer_name_snapshot LIKE ? ESCAPE '!'", [$like])
                     ->orWhereRaw("customer_phone_snapshot LIKE ? ESCAPE '!'", [$like]);
                 if ($matchingOrders !== []) $where->orWhereIn('order_id', $matchingOrders);
