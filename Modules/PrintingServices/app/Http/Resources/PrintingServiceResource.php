@@ -12,6 +12,7 @@ class PrintingServiceResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
+            'pricingMethod' => $this->pricing_method->value,
             'basePrice' => $this->base_price,
             'costPrice' => $this->cost_price,
             'status' => $this->status->value,
