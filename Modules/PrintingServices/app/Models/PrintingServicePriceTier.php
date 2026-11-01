@@ -21,7 +21,7 @@ class PrintingServicePriceTier extends Model
         return [
             'min_quantity' => 'integer',
             'max_quantity' => 'integer',
-            'price' => 'decimal:2',
+            'price' => 'decimal:6',
         ];
     }
 
