@@ -39,7 +39,7 @@ class UpdatePrintingServiceRequest extends FormRequest
             'pricingMethod' => ['sometimes', 'required', 'string', Rule::enum(PricingMethod::class)],
             'name' => ['sometimes', 'required', 'string', 'max:150', $this->uniqueLiveName($service?->id)],
             'basePrice' => ['sometimes', 'nullable', function ($attr, $value, $fail): void {
-                if (! Money::validRate($value, true, $this->input('pricingMethod', $service?->pricing_method?->value ?? 'quantity'))) {
+                if (! Money::validRate($value, true, $this->input('pricingMethod', $this->route('printingService')?->pricing_method?->value ?? 'quantity'))) {
                     $fail(__('printing_services.messages.base_price_invalid'));
                 }
             }],
