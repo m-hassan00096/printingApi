@@ -75,7 +75,7 @@ class UpdatePrintingServiceAction
                     continue;
                 }
 
-                $this->tierRules->assertPrice($command['price'], "priceTiers.{$index}.price");
+                $this->tierRules->assertPrice($command['price'], "priceTiers.{$index}.price", $data['pricingMethod'] ?? $locked->pricing_method->value);
                 $typeId = isset($command['customerTypeId']) ? (int) $command['customerTypeId'] : null;
                 $this->tierRules->assertCustomerType($typeId, "priceTiers.{$index}.customerTypeId");
                 $entry = [
