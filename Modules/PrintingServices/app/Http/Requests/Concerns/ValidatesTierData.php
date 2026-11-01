@@ -17,7 +17,7 @@ trait ValidatesTierData
             }
         }
 
-        if (! array_key_exists('price', $tier) || ! Money::valid($tier['price'], false)) {
+        if (! array_key_exists('price', $tier) || ! Money::validRate($tier['price'], false, $this->input('pricingMethod', $this->route('printingService')?->pricing_method?->value ?? 'quantity'))) {
             $validator->errors()->add($prefix.'price', __('printing_services.messages.tier_price_invalid'));
         }
 
