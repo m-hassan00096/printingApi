@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Modules\Customers\Contracts\CustomerFinanceReference;
 use Modules\Finance\Enums\LedgerEntryType;
 use Modules\Finance\Support\Money;
+use Modules\Orders\Support\OrderMoney;
 
 /**
  * Read-only settlement of work physically delivered to a customer.
@@ -65,7 +66,7 @@ class CustomerSettlementService
                     'quantity' => $quantity,
                     // Informational unit price only; agreed_total is authoritative.
                     'unitPrice' => $quantity > 0
-                        ? Money::format(intdiv($amount + intdiv($quantity, 2), $quantity))
+                        ? OrderMoney::unitPrice((string) $item->agreed_total, $quantity)
                         : null,
                     'cents' => $amount,
                     'sort' => sprintf('1:%012d:%012d', $delivery->id, $item->id),
