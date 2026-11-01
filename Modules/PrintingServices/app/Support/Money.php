@@ -21,6 +21,21 @@ final class Money
         return $allowZero || (bool) preg_match('/[1-9]/', $value);
     }
 
+    public static function validRate(mixed $value, bool $allowZero, string $method): bool
+    {
+        if ($method === 'quantity') {
+            return self::valid($value, $allowZero);
+        }
+        if (! is_string($value) && ! is_int($value)) {
+            return false;
+        }
+        $text = (string) $value;
+        if (! preg_match('/\A(?:0|[1-9][0-9]{0,27})(?:\.[0-9]{1,6})?\z/D', $text)) {
+            return false;
+        }
+        return $allowZero || (bool) preg_match('/[1-9]/', $text);
+    }
+
     public static function normalize(string|int|float $value): string
     {
         [$whole, $fraction] = array_pad(explode('.', (string) $value, 2), 2, '');
