@@ -246,6 +246,9 @@ class OrdersProductionAdapter implements ProductionOrderGateway
             'serviceName' => $item->service_name_snapshot,
             'quantity' => (int) $item->quantity,
             'specifications' => $item->specifications,
+            'widthCm' => $item->width_cm,
+            'heightCm' => $item->height_cm,
+            'pricingMethod' => $item->pricing_method->value,
             'files' => \Modules\Orders\Http\Resources\OrderItemFileResource::collection(
                 $item->files->sortByDesc('id'),
             )->resolve(request()),

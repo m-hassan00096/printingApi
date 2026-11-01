@@ -20,6 +20,8 @@ return [
         'duplicate_catch_all' => 'Only one any-quantity tier is allowed per customer type.',
         'overlapping_ranges' => 'Quantity ranges cannot overlap for the same customer type.',
         'inactive_service' => 'The printing service is inactive and cannot be used in a new order.',
+        'dimension_positive' => 'Width and height must be positive decimal values in centimeters.',
+        'pricing_method_requires_new_prices' => 'Set a new base price and replace or remove every existing tier before changing the pricing method.',
         'quantity_positive' => 'The quantity must be a positive whole number.',
         'total_overflow' => 'The price total exceeds supported numeric storage precision.',
         'invalid_service_usage_guard' => 'Invalid printing service usage guard [:guard].',

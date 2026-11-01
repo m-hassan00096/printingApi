@@ -9,9 +9,9 @@ use Modules\Settings\Models\ParameterValue;
 
 final class PriceTierRuleService
 {
-    public function assertPrice(mixed $price, string $field = 'priceTiers'): void
+    public function assertPrice(mixed $price, string $field = 'priceTiers', string $method = 'quantity'): void
     {
-        if (! Money::valid($price, false)) {
+        if (! Money::validRate($price, false, $method)) {
             throw ValidationException::withMessages([
                 $field => __('printing_services.messages.tier_price_invalid'),
             ]);

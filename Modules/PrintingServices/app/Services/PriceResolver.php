@@ -5,15 +5,16 @@ namespace Modules\PrintingServices\Services;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
 use Modules\PrintingServices\Enums\PrintingServiceStatus;
+use Modules\PrintingServices\Enums\PricingMethod;
 use Modules\PrintingServices\Models\PrintingService;
 use Modules\PrintingServices\Models\PrintingServicePriceTier;
 use Modules\PrintingServices\Support\Money;
 
 class PriceResolver
 {
-    public function __construct(private readonly PriceTierRuleService $rules) {}
+    public function __construct(private readonly PriceTierRuleService $rules, private readonly AreaPriceCalculator $calculator) {}
 
-    public function resolve(PrintingService $service, ?int $customerTypeId, int $quantity): array
+    public function resolve(PrintingService $service, ?int $customerTypeId, int $quantity, ?string $widthCm = null, ?string $heightCm = null): array
     {
         if ($service->status !== PrintingServiceStatus::ACTIVE) {
             throw ValidationException::withMessages(['serviceId' => __('printing_services.messages.inactive_service')]);
@@ -49,15 +50,24 @@ class PriceResolver
             $source = $tier ? 'genericCatchAll' : null;
         }
 
-        // A missing base price is shown and suggested as zero, not manual.
-        $price = $tier?->price ?? $service->base_price ?? '0.00';
+        // A missing base price remains zero rather than changing manual pricing semantics.
+        $rate = (string) ($tier?->price ?? $service->base_price ?? '0.00');
+        $method = $service->pricing_method;
+        $calculation = $this->calculator->calculate($method, $rate, $quantity, $widthCm, $heightCm);
 
         return [
             'serviceId' => $service->id,
             'quantity' => $quantity,
+            'pricingMethod' => $method->value,
+            'widthCm' => $method === PricingMethod::QUANTITY ? null : $widthCm,
+            'heightCm' => $method === PricingMethod::QUANTITY ? null : $heightCm,
+            'area' => $calculation['area'],
+            'suggestedPiecePrice' => $calculation['piecePrice'],
             'source' => $source ?? 'basePrice',
-            'suggestedUnitPrice' => Money::normalize($price),
-            'suggestedTotal' => Money::total($price, $quantity),
+            'suggestedUnitPrice' => $method === PricingMethod::QUANTITY
+                ? bcadd($rate, '0', 2)
+                : (rtrim(rtrim($rate, '0'), '.') ?: '0'),
+            'suggestedTotal' => $calculation['total'],
             'requiresManualTotal' => false,
         ];
     }

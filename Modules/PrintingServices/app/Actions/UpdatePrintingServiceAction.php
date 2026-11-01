@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Modules\PrintingServices\Enums\PriceTierActionStatus;
 use Modules\PrintingServices\Models\PrintingService;
+use Modules\PrintingServices\Enums\PricingMethod;
 use Modules\PrintingServices\Services\PriceTierRuleService;
 use Modules\PrintingServices\Support\ServiceName;
 
@@ -74,7 +75,7 @@ class UpdatePrintingServiceAction
                     continue;
                 }
 
-                $this->tierRules->assertPrice($command['price'], "priceTiers.{$index}.price");
+                $this->tierRules->assertPrice($command['price'], "priceTiers.{$index}.price", $data['pricingMethod'] ?? $locked->pricing_method->value);
                 $typeId = isset($command['customerTypeId']) ? (int) $command['customerTypeId'] : null;
                 $this->tierRules->assertCustomerType($typeId, "priceTiers.{$index}.customerTypeId");
                 $entry = [
@@ -90,6 +91,27 @@ class UpdatePrintingServiceAction
             }
 
             $this->tierRules->assertValidFinalRanges(array_values($final));
+
+            if (array_key_exists('pricingMethod', $data) && $data['pricingMethod'] !== $locked->pricing_method->value) {
+                if (! array_key_exists('basePrice', $data) || $data['basePrice'] === null) {
+                    throw ValidationException::withMessages(['basePrice' => __('printing_services.messages.pricing_method_requires_new_prices')]);
+                }
+                $existingTierCount = $stored->count();
+                if ($existingTierCount > 0) {
+                    $updatedIds = [];
+                    foreach ($commands as $command) {
+                        if (in_array((int) $command['actionStatus'], [PriceTierActionStatus::UPDATE->value, PriceTierActionStatus::DELETE->value], true)) {
+                            $updatedIds[(int) $command['priceTierId']] = true;
+                        }
+                    }
+                    foreach ($stored as $tier) {
+                        if (! isset($updatedIds[$tier->id])) {
+                            throw ValidationException::withMessages(['priceTiers' => __('printing_services.messages.pricing_method_requires_new_prices')]);
+                        }
+                    }
+                }
+                $locked->pricing_method = PricingMethod::from($data['pricingMethod']);
+            }
 
             if (array_key_exists('name', $data)) {
                 $name = ServiceName::normalize($data['name']);

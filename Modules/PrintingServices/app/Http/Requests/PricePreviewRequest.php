@@ -21,6 +21,8 @@ class PricePreviewRequest extends FormRequest
             'serviceId' => ['required', 'integer', Rule::exists('printing_services', 'id')->whereNull('deleted_at')],
             'customerTypeId' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'quantity' => ['required', 'integer', 'min:1', 'max:'.PHP_INT_MAX],
+            'widthCm' => ['sometimes', 'nullable', 'regex:/\A(?:0|[1-9][0-9]{0,7})(?:\.[0-9]{1,4})?\z/D'],
+            'heightCm' => ['sometimes', 'nullable', 'regex:/\A(?:0|[1-9][0-9]{0,7})(?:\.[0-9]{1,4})?\z/D'],
         ];
     }
 }

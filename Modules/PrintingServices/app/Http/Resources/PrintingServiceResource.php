@@ -12,7 +12,8 @@ class PrintingServiceResource extends JsonResource
         return [
             'id' => $this->id,
             'name' => $this->name,
-            'basePrice' => $this->base_price,
+            'pricingMethod' => $this->pricing_method->value,
+            'basePrice' => $this->base_price === null ? null : ($this->pricing_method->value === 'quantity' ? bcadd((string) $this->base_price, '0', 2) : (string) $this->base_price),
             'costPrice' => $this->cost_price,
             'status' => $this->status->value,
             'priceTiers' => $this->whenLoaded(

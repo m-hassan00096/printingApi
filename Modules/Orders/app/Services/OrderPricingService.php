@@ -12,6 +12,8 @@ use Modules\PrintingServices\Models\PrintingService;
 
 class OrderPricingService
 {
+    public function __construct(private readonly \Modules\PrintingServices\Services\PriceResolver $resolver) {}
+
     /** Call inside a transaction before writing references. */
     public function activeCustomer(int $id): Customer
     {
@@ -60,6 +62,17 @@ class OrderPricingService
         $item->customer_type_id_snapshot = $order->customer_type_id_snapshot;
         $item->customer_type_name_snapshot = $order->customer_type_name_snapshot;
         $item->quantity = (int) $data['quantity'];
+        $preview = $this->resolver->resolve(
+            $service,
+            $order->customer_type_id_snapshot,
+            (int) $data['quantity'],
+            isset($data['widthCm']) ? (string) $data['widthCm'] : null,
+            isset($data['heightCm']) ? (string) $data['heightCm'] : null,
+        );
+        $item->pricing_method = $service->pricing_method;
+        $item->width_cm = $preview['widthCm'];
+        $item->height_cm = $preview['heightCm'];
+        $item->pricing_rate_snapshot = $preview['suggestedUnitPrice'];
         $item->specifications = $data['specifications'] ?? null;
         $item->agreed_total = OrderMoney::format(OrderMoney::cents((string) $data['agreedTotal']));
     }

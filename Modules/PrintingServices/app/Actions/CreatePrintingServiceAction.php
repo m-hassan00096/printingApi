@@ -21,6 +21,7 @@ class CreatePrintingServiceAction
             $service = new PrintingService();
             $service->fill([
                 'name' => $name,
+                'pricing_method' => $data['pricingMethod'] ?? 'quantity',
                 'base_price' => $data['basePrice'] ?? null,
                 'cost_price' => $data['costPrice'] ?? null,
                 'status' => $data['status'],
@@ -40,7 +41,7 @@ class CreatePrintingServiceAction
 
             $final = [];
             foreach ($tiers as $index => $tier) {
-                $this->tierRules->assertPrice($tier['price'], "priceTiers.{$index}.price");
+                $this->tierRules->assertPrice($tier['price'], "priceTiers.{$index}.price", $data['pricingMethod'] ?? 'quantity');
                 $typeId = isset($tier['customerTypeId']) ? (int) $tier['customerTypeId'] : null;
                 $this->tierRules->assertCustomerType($typeId, "priceTiers.{$index}.customerTypeId");
                 $final[] = [

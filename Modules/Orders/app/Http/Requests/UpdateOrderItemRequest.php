@@ -16,7 +16,7 @@ class UpdateOrderItemRequest extends FormRequest
 
     protected function allowedPayloadFields(): array
     {
-        return ['serviceId', 'quantity', 'specifications', 'agreedTotal'];
+        return ['serviceId', 'quantity', 'specifications', 'agreedTotal', 'widthCm', 'heightCm'];
     }
 
     public function rules(): array
@@ -26,6 +26,8 @@ class UpdateOrderItemRequest extends FormRequest
                 'sometimes', 'required', 'integer',
                 Rule::exists('printing_services', 'id')->whereNull('deleted_at')->where('status', 1),
             ],
+            'widthCm' => ['sometimes', 'nullable', 'regex:/\A(?:0|[1-9][0-9]{0,7})(?:\.[0-9]{1,4})?\z/D'],
+            'heightCm' => ['sometimes', 'nullable', 'regex:/\A(?:0|[1-9][0-9]{0,7})(?:\.[0-9]{1,4})?\z/D'],
             'quantity' => ['sometimes', 'required', 'integer', 'min:1', 'max:1000000'],
             'specifications' => ['sometimes', 'nullable', 'string', 'max:20000'],
             'agreedTotal' => [
