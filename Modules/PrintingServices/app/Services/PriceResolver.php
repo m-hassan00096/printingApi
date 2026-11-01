@@ -66,7 +66,7 @@ class PriceResolver
             'source' => $source ?? 'basePrice',
             'suggestedUnitPrice' => $method === PricingMethod::QUANTITY
                 ? bcadd($rate, '0', 2)
-                : rtrim(rtrim($rate, '0'), '.') ?: '0',
+                : (rtrim(rtrim($rate, '0'), '.') ?: '0'),
             'suggestedTotal' => $calculation['total'],
             'requiresManualTotal' => false,
         ];
