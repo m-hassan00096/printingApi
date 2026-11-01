@@ -45,6 +45,7 @@ class CollectionCorrectionTest extends OrdersTestCase
         $created = $this->withHeader('Idempotency-Key', 'general-before')
             ->postJson('/api/v1/finance/collections', [
                 'customerId' => $this->customer->id, 'amount' => '500.00', 'paymentMethod' => 0,
+                'actualReceiptNumber' => '042205',
             ])->assertCreated();
         $oldId = $created->json('data.id');
         $corrected = $this->correct($oldId, '300.00', 'general-correct')->assertOk();
@@ -53,11 +54,12 @@ class CollectionCorrectionTest extends OrdersTestCase
         $this->assertNotSame($oldId, $newId);
         $this->assertDatabaseHas('finance_collections', [
             'id' => $oldId, 'status' => CollectionStatus::REVERSED->value,
-            'corrected_to_id' => $newId, 'amount' => '500.00',
+            'corrected_to_id' => $newId, 'amount' => '500.00', 'actual_receipt_number' => '042205',
         ]);
         $this->assertDatabaseHas('finance_collections', [
             'id' => $newId, 'corrected_from_id' => $oldId,
             'source' => CollectionSource::GENERAL->value, 'amount' => '300.00',
+            'actual_receipt_number' => '042205',
             'status' => CollectionStatus::POSTED->value,
         ]);
         $this->assertDatabaseCount('finance_ledger_entries', 3);

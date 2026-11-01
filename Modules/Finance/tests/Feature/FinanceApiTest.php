@@ -31,6 +31,27 @@ class FinanceApiTest extends OrdersTestCase
         app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 
+    public function test_manual_receipt_reference_is_searchable_and_validated(): void
+    {
+        $created = $this->withHeader('Idempotency-Key', 'manual-reference')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $this->customer->id,
+                'amount' => '100.00', 'paymentMethod' => 0,
+                'actualReceiptNumber' => '042205',
+            ])->assertCreated();
+        $id = $created->json('data.id');
+
+        $this->getJson('/api/v1/finance/collections/'.$id)
+            ->assertOk()->assertJsonPath('data.actualReceiptNumber', '042205');
+        $this->getJson('/api/v1/finance/collections?filter[search]=042205')
+            ->assertOk()->assertJsonPath('data.pagination.total', 1);
+        $this->withHeader('Idempotency-Key', 'bad-manual-reference')
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $this->customer->id, 'amount' => '100.00',
+                'paymentMethod' => 0, 'actualReceiptNumber' => 'REF-42',
+            ])->assertUnprocessable()->assertJsonValidationErrors('actualReceiptNumber');
+    }
+
     public function test_opening_debt_and_credit_are_exclusive_and_shown_as_integer_enum(): void
     {
         $id = $this->customer->id;

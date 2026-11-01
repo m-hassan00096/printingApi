@@ -99,6 +99,9 @@ class UpdatePrintingServiceAction
             if (array_key_exists('basePrice', $data)) {
                 $locked->base_price = $data['basePrice'];
             }
+            if (array_key_exists('costPrice', $data)) {
+                $locked->cost_price = $data['costPrice'];
+            }
             if (array_key_exists('status', $data)) {
                 $locked->status = $data['status'];
             }

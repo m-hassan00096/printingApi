@@ -53,6 +53,10 @@ class OrderPricingService
         // prices using PrintingServices separately.
         $item->printing_service_id = $service->id;
         $item->service_name_snapshot = $service->name;
+        // Snapshot is private accounting data, independent from the agreed sale price.
+        if (! $item->exists) {
+            $item->unit_cost_snapshot = $service->cost_price;
+        }
         $item->customer_type_id_snapshot = $order->customer_type_id_snapshot;
         $item->customer_type_name_snapshot = $order->customer_type_name_snapshot;
         $item->quantity = (int) $data['quantity'];

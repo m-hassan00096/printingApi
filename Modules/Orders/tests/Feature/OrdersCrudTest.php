@@ -60,6 +60,22 @@ class OrdersCrudTest extends OrdersTestCase
         ]);
     }
 
+    public function test_order_item_snapshots_unit_cost_without_exposing_it_to_order_viewers(): void
+    {
+        $this->service->cost_price = '2.75';
+        $this->service->save();
+        $order = $this->draft();
+        $item = $order->items()->firstOrFail();
+        $this->assertDatabaseHas('order_items', ['id' => $item->id, 'unit_cost_snapshot' => '2.75']);
+
+        $this->service->cost_price = '4.50';
+        $this->service->save();
+        $this->getJson($this->path($order))->assertOk()
+            ->assertJsonMissingPath('data.items.0.unitCostSnapshot')
+            ->assertJsonMissingPath('data.items.0.costPrice');
+        $this->assertSame('2.75', (string) $item->fresh()->unit_cost_snapshot);
+    }
+
     public function test_repeated_idempotency_key_does_not_create_duplicate_drafts(): void
     {
         $this->withHeader('Idempotency-Key', 'draft-duplicate-case');

@@ -2,6 +2,7 @@
 
 return [
     'messages' => [
+        'cost_price_invalid' => 'Unit cost must be non-negative with at most 10 whole digits and two decimals.',
         'base_price_invalid' => 'The base price must be zero or greater, in EGP, with at most two decimal places.',
         'tier_price_invalid' => 'The tier price must be greater than zero, in EGP, with at most two decimal places.',
         'duplicate_name' => 'The printing service name is already in use.',
