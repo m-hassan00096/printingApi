@@ -21,6 +21,7 @@ class CreatePrintingServiceAction
             $service = new PrintingService();
             $service->fill([
                 'name' => $name,
+                'pricing_method' => $data['pricingMethod'] ?? 'quantity',
                 'base_price' => $data['basePrice'] ?? null,
                 'cost_price' => $data['costPrice'] ?? null,
                 'status' => $data['status'],
