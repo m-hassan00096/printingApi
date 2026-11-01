@@ -18,10 +18,11 @@ class PrintingServiceSelectService
             ->where('status', PrintingServiceStatus::ACTIVE->value)
             ->orderBy('name')
             ->orderBy('id')
-            ->get(['id', 'name'])
+            ->get(['id', 'name', 'pricing_method'])
             ->map(fn (PrintingService $service): array => [
                 'value' => $service->id,
                 'label' => $service->name,
+                'pricingMethod' => $service->pricing_method->value,
             ])->all();
     }
 }
