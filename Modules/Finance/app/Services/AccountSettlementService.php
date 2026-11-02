@@ -39,40 +39,54 @@ final class AccountSettlementService
             $before = $this->scope->build($customerId, $data['dateTo'], true);
             if (! hash_equals($before['previewHash'], $data['previewHash'])) $this->stale();
             $amount = Money::cents($data['amount']);
+            $discount = Money::cents($data['discountAmount'] ?? '0.00');
             $due = Money::cents($before['dueNow']);
+            $accountDebt = Money::cents($before['accountBalance']);
             if (! $before['hasWork']) {
                 throw ValidationException::withMessages(['amount' => __('settlements.empty_scope')]);
             }
-            if ($amount < 0 || $amount > $due) {
-                throw ValidationException::withMessages(['amount' => __('settlements.excess_payment')]);
+            if ($discount < 0 || $discount > $due || $discount > max(0, $accountDebt)) {
+                // Discounts reduce a real debt, never turn a customer into a creditor.
+                throw ValidationException::withMessages(['discountAmount' => __('settlements.invalid_discount')]);
             }
-            if ($due > 0 && $amount === 0) {
-                throw ValidationException::withMessages(['amount' => __('settlements.payment_required')]);
+            if ($amount < 0 || $amount > $due - $discount) {
+                throw ValidationException::withMessages(['amount' => __('settlements.excess_after_discount')]);
             }
+            // Zero-cash partial evidence is permitted. It does not write a receipt.
             // Re-reading and locking the customer's account makes a new-key
             // duplicate harmless too, not only an HTTP retry with the same key.
             $previous = DB::table('finance_account_settlements')->where('customer_id', $customerId)
                 ->where('scope_to', $data['dateTo'])->where('after_hash', $before['previewHash'])
                 ->orderByDesc('id')->lockForUpdate()->first();
-            if ($amount === 0 && $previous !== null) {
+            if ($amount === 0 && $discount === 0 && $previous !== null) {
                 $this->idempotency->finish($claim, 'account_settlement', (int) $previous->id);
                 return $this->show($customerId, (int) $previous->id);
             }
             if (DB::table('finance_account_settlements')->where('customer_id', $customerId)
                 ->where('preview_hash', $before['previewHash'])->exists()) $this->stale();
 
-            $balanceAfter = Money::cents($before['balanceBefore']) - $amount;
+            $balanceAfter = Money::cents($before['balanceBefore']) - $amount - $discount;
             $status = $balanceAfter > 0 ? 'partial' : ($balanceAfter < 0 ? 'credit' : 'closed');
             $today = now('Africa/Cairo')->toDateString();
             $id = DB::table('finance_account_settlements')->insertGetId([
                 'customer_id' => $customerId, 'scope_to' => $data['dateTo'], 'settled_on' => $today,
                 'status' => $status, 'balance_before' => $before['balanceBefore'],
                 'collected_amount' => Money::format($amount), 'balance_after' => Money::format($balanceAfter),
-                'account_balance_after' => Money::format(Money::cents($before['accountBalance']) - $amount),
+                'discount_amount' => Money::format($discount),
+                'discount_reason' => $discount > 0 ? trim((string) $data['discountReason']) : null,
+                'account_balance_after' => Money::format($accountDebt - $amount - $discount),
                 'preview_hash' => $before['previewHash'], 'snapshot' => json_encode($before, JSON_THROW_ON_ERROR),
                 'created_by' => $actorId, 'note' => $data['note'] ?? null, 'created_at' => now(),
             ]);
             $number = 'SET-'.now('Africa/Cairo')->format('Y').'-'.str_pad((string) $id, 5, '0', STR_PAD_LEFT);
+            $discountEntry = null;
+            if ($discount > 0) {
+                $discountEntry = $this->ledger->post($customerId, LedgerEntryType::SETTLEMENT_DISCOUNT,
+                    -$discount, 'account-settlement-discount:'.$id, effectiveDate: $today,
+                    note: __('settlements.discount_note', [
+                        'number' => $number, 'reason' => trim((string) $data['discountReason']),
+                    ]));
+            }
             $receipt = null;
             if ($amount > 0) {
                 $receipt = $this->collections->post([
@@ -87,6 +101,7 @@ final class AccountSettlementService
             $after = $this->scope->build($customerId, $data['dateTo'], true);
             DB::table('finance_account_settlements')->where('id', $id)->update([
                 'settlement_number' => $number, 'collection_id' => $receipt?->id,
+                'discount_ledger_entry_id' => $discountEntry?->id,
                 'after_hash' => $after['previewHash'],
                 'snapshot' => json_encode(['before' => $before, 'after' => $after,
                     'receiptNumber' => $receipt?->receipt_number], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
@@ -133,6 +148,8 @@ final class AccountSettlementService
             'status' => $status, 'originalStatus' => $row->status, 'statusLabel' => __('settlements.status.'.$status),
             'needsReview' => $review,
             'balanceBefore' => $money($row->balance_before), 'amountCollected' => $money($row->collected_amount),
+            'discountAmount' => $money($row->discount_amount), 'discountReason' => $row->discount_reason,
+            'discountLedgerEntryId' => $row->discount_ledger_entry_id === null ? null : (int) $row->discount_ledger_entry_id,
             'balanceAfter' => $money($row->balance_after), 'accountBalanceAfter' => $money($row->account_balance_after),
             'collectionId' => $row->collection_id === null ? null : (int) $row->collection_id,
             'receiptNumber' => $snapshot['receiptNumber'], 'createdAt' => $row->created_at,
