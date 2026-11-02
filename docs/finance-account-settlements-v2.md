@@ -10,11 +10,12 @@ This preserves the application's existing running-account policy. An order refer
 - A historical delivered-work report is READ ONLY. Financial settlement uses current funds, not a historical closing balance as a payment instruction.
 - Settlement payments use the existing `CollectionService::post` and its receipt, destination validation and immutable ledger entry.
 - The selected cutoff limits WORK only. Payments/opening balances are current through `paymentsThrough`. New cash is dated on actual confirmation, never backdated to `dateTo`.
-- There is no automatic discount, debt write-off, forced zero, cash refund or deletion of previous history.
-- `balanceAfter = openingBalance + deliveredTotal - netPayments - amountCollected`.
+- A user-authorized FIXED discount is recorded as its own negative `SETTLEMENT_DISCOUNT` ledger movement, linked to the existing settlement evidence; it is not a receipt and never contributes to `netPayments`. No automatic discount, forced zero, cash refund or history deletion occurs.
+- `balanceAfter = openingBalance + deliveredTotal - netPayments - priorSettlementDiscounts - discountAmount - amountCollected`.
+- `accountBalanceAfter` also decreases by the fixed discount and actual collected amount; discounts may not exceed both the delivered-scope due and the real customer account debit, preventing artificial customer credit.
 - `accountBalanceAfter` may remain positive because of confirmed work outside scope.
 - A credit in the delivered scope is NOT automatically refundable credit. Refund permissions and the existing full-account refund validation remain authoritative.
-- Zero new payment is allowed only for an already covered/credit scope; nothing is posted to the cash ledger.
+- Zero new payment is allowed for partial, fully covered or credit scopes. It saves immutable evidence but **does not eliminate unpaid debt**. A positive discount with zero cash posts only the discount ledger movement, never a collection.
 - Identical idempotency keys replay the original record. Stale fingerprints return 409. An unchanged already-covered scope reuses its last record rather than creating a second receipt.
 - Records preserve their original snapshots. Later reversals, refunds or cancellation of covered deliveries/orders flag records `needs_review`; they do not silently rewrite the signed evidence or leave an unconditional closed badge.
 
@@ -23,12 +24,12 @@ This preserves the application's existing running-account policy. An order refer
 All endpoints use `/api/v1/finance/customers/{customer}` and existing response envelopes.
 
 - `GET /settlements/preview?dateTo=YYYY-MM-DD`: current settlement preview, component totals, source references and `previewHash`.
-- `POST /settlements`: requires `Idempotency-Key`, `dateTo`, `previewHash`, decimal-string `amount`; for positive payments requires `paymentMethod` and the matching destination where needed. Optional `note`.
+- `POST /settlements`: requires `Idempotency-Key`, `dateTo`, `previewHash`, decimal-string `amount`; optionally accepts decimal-string `discountAmount` plus required `discountReason` (minimum 3 characters) for nonzero discount. Positive real payments require `paymentMethod` and the corresponding destination. Optional `note`.
 - `GET /settlements?page=1`: paginated evidence records.
 - `GET /settlements/{id}`: immutable snapshot and current review flag, customer-scoped.
 - Existing `GET /settlement?dateFrom=...&dateTo=...` remains a read-only period report.
 
-Read: `finance.ledger.view`. Confirm: both `finance.ledger.view` and `finance.collections.create`. Existing refund/opening-balance/collection permissions remain unchanged.
+Read: `finance.ledger.view`. Confirm: both `finance.ledger.view` and `finance.collections.create`. Applying a nonzero discount additionally requires `finance.settlements.discount`. Other refund/opening-balance/collection permissions remain unchanged.
 
 ## Deployment and verification
 
