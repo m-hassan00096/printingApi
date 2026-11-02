@@ -9,6 +9,7 @@ enum LedgerEntryType: int
     case COLLECTION_REVERSAL = 4;
     case REFUND = 5;
     case OPENING_BALANCE = 6;
+    case SETTLEMENT_DISCOUNT = 7;
 
     public function label(): string
     {
@@ -19,6 +20,7 @@ enum LedgerEntryType: int
             self::COLLECTION_REVERSAL => 'collection_reversal',
             self::REFUND => 'refund',
             self::OPENING_BALANCE => 'opening_balance',
+            self::SETTLEMENT_DISCOUNT => 'settlement_discount',
         });
     }
 }

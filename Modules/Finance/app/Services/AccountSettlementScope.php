@@ -62,7 +62,7 @@ final class AccountSettlementScope
                 'heightCm' => $item->height_cm === null ? null : (string) $item->height_cm,
             ];
         }
-        $opening = $netFunds = $account = $collected = $reversed = $refunded = $outsideAdvances = 0;
+        $opening = $netFunds = $account = $collected = $reversed = $refunded = $outsideAdvances = $discounts = 0;
         $payments = [];
         $creditIds = [];
         foreach ($entries as $entry) {
@@ -71,6 +71,11 @@ final class AccountSettlementScope
             $type = LedgerEntryType::from((int) $entry->type);
             if ($type === LedgerEntryType::OPENING_BALANCE) {
                 $opening += $cents;
+            }
+            if ($type === LedgerEntryType::SETTLEMENT_DISCOUNT) {
+                // Discounts reduce debt, but never count as cash collected.
+                $discounts -= $cents;
+                continue;
             }
             if (! in_array($type, [LedgerEntryType::COLLECTION, LedgerEntryType::COLLECTION_REVERSAL, LedgerEntryType::REFUND], true)) continue;
             $netFunds -= $cents;
@@ -94,7 +99,7 @@ final class AccountSettlementScope
                 'outsideWorkScope' => $outside,
             ];
         }
-        $balance = $opening + $delivered - $netFunds;
+        $balance = $opening + $delivered - $netFunds - $discounts;
         $manifest = [
             'ledgerMaxId' => (int) ($entries->max('id') ?? 0),
             'creditEntryIds' => $creditIds,
@@ -114,6 +119,7 @@ final class AccountSettlementScope
             'openingBalance' => Money::format($opening), 'deliveredTotal' => Money::format($delivered),
             'grossCollections' => Money::format($collected), 'collectionReversals' => Money::format($reversed),
             'refundsTotal' => Money::format($refunded), 'netPayments' => Money::format($netFunds),
+            'discountsTotal' => Money::format($discounts),
             'advancesForOtherWork' => Money::format($outsideAdvances),
             'balanceBefore' => Money::format($balance), 'dueNow' => Money::format(max(0, $balance)),
             'creditInScope' => Money::format(max(0, -$balance)),
