@@ -94,6 +94,7 @@ class CustomerSettlementRecordsTest extends OrdersTestCase
         $id = $response->json('data.id');
         $this->assertDatabaseHas('finance_customer_settlements', [
             'id' => $id, 'customer_id' => $this->customer->id,
+            'settled_on' => $today,
             'discount_amount' => '100.00', 'collected_amount' => '50.00',
         ]);
         $this->assertDatabaseHas('finance_ledger_entries', [

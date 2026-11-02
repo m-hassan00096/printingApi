@@ -13,6 +13,8 @@ return new class extends Migration
             $table->foreignId('customer_id')->constrained('customers')->restrictOnDelete();
             $table->date('date_from');
             $table->date('date_to');
+            // The accounting action can happen after the delivered-work period ends.
+            $table->date('settled_on');
             $table->decimal('balance_before', 12, 2);
             $table->decimal('balance_after', 12, 2);
             $table->decimal('discount_amount', 12, 2)->default(0);

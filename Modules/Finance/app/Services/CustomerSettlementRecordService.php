@@ -76,19 +76,22 @@ class CustomerSettlementRecordService
             $due = Money::cents($before['closingBalance']);
             $discount = Money::cents($data['discountAmount']);
             $collected = Money::cents($data['collectedAmount']);
+            $settledOn = now('Africa/Cairo')->toDateString();
             // Both the delivered-only statement AND the real Finance balance must support
             // a discount. A confirmed but undelivered item is never discount-eligible here.
             $financeDebt = $this->ledger->centsForPosting($customerId);
             if ($discount > 0 && ($due <= 0 || $discount > $due || $discount > $financeDebt)) {
                 throw new FinanceException('settlement_discount_exceeds_due', HttpStatusCode::UNPROCESSABLE_ENTITY);
             }
-            if ($collected > 0 && ($due <= 0 || $collected > $due - $discount)) {
+            if ($collected > 0 && ($due <= 0 || $collected > $due - $discount
+                || $discount + $collected > $financeDebt)) {
                 throw new FinanceException('settlement_collection_exceeds_due', HttpStatusCode::UNPROCESSABLE_ENTITY);
             }
 
             $id = DB::table('finance_customer_settlements')->insertGetId([
                 'customer_id' => $customerId,
                 'date_from' => $data['dateFrom'], 'date_to' => $data['dateTo'],
+                'settled_on' => $settledOn,
                 'balance_before' => $before['closingBalance'],
                 'balance_after' => $before['closingBalance'],
                 'discount_amount' => Money::format($discount),
@@ -101,7 +104,7 @@ class CustomerSettlementRecordService
 
             if ($discount > 0) {
                 $this->ledger->post($customerId, LedgerEntryType::SETTLEMENT_DISCOUNT, -$discount,
-                    'settlement-discount:'.$id, effectiveDate: $data['dateTo'],
+                    'settlement-discount:'.$id, effectiveDate: $settledOn,
                     note: trim((string) $data['discountReason']));
             }
 
@@ -111,13 +114,52 @@ class CustomerSettlementRecordService
                     'customerId' => $customerId, 'amount' => Money::format($collected),
                     'paymentMethod' => $data['paymentMethod'],
                     'paymentDestinationId' => $data['paymentDestinationId'] ?? null,
-                    'collectedOn' => $data['dateTo'],
+                    'collectedOn' => $settledOn,
                     'note' => 'تحصيل تصفية #'.$id.(! empty($data['note']) ? ' — '.$data['note'] : ''),
                 ], CollectionSource::GENERAL, $actorId);
                 $collectionId = $collection->id;
             }
 
-            $after = $this->statements->statement($customerId, $data['dateFrom'], $data['dateTo']);
+            // The work period is independent from the real settlement date. Extend
+            // the frozen report with the two actual-day movements, even when the
+            // selected dateTo is in the past. Never backdate a cash receipt.
+            $after = $before;
+            $after['settlementOn'] = $settledOn;
+            $running = $due;
+            if ($discount > 0) {
+                $running -= $discount;
+                $after['discountsTotal'] = Money::format(
+                    Money::cents((string) ($after['discountsTotal'] ?? '0.00')) + $discount
+                );
+                $after['lines'][] = [
+                    'key' => 'settlement-discount:'.$id,
+                    'kind' => 'settlement_discount',
+                    'date' => $settledOn,
+                    'description' => 'خصم تصفية حساب — '.trim((string) $data['discountReason']),
+                    'orderId' => null, 'orderNumber' => null, 'receiptNumber' => null,
+                    'quantity' => null, 'unitPrice' => null,
+                    'signedAmount' => Money::format(-$discount),
+                    'runningBalance' => Money::format($running),
+                ];
+            }
+            if ($collected > 0) {
+                $running -= $collected;
+                $after['paymentsTotal'] = Money::format(Money::cents($after['paymentsTotal']) + $collected);
+                $after['lines'][] = [
+                    'key' => 'settlement-collection:'.$collectionId,
+                    'kind' => 'collection',
+                    'date' => $settledOn,
+                    'description' => 'تحصيل عند تصفية الحساب',
+                    'orderId' => null, 'orderNumber' => null,
+                    'receiptNumber' => $collection->receipt_number,
+                    'quantity' => null, 'unitPrice' => null,
+                    'signedAmount' => Money::format(-$collected),
+                    'runningBalance' => Money::format($running),
+                ];
+            }
+            $after['closingBalance'] = Money::format($running);
+            // Reconciliation fields in the baseline report describe the period
+            // BEFORE the later settlement movements. They remain historical.
             DB::table('finance_customer_settlements')->where('id', $id)->update([
                 'balance_after' => $after['closingBalance'],
                 'collection_id' => $collectionId,
@@ -140,6 +182,7 @@ class CustomerSettlementRecordService
             'id' => (int) $record->id,
             'number' => 'SET-'.substr((string) $record->created_at, 0, 4).'-'.str_pad((string) $record->id, 5, '0', STR_PAD_LEFT),
             'dateFrom' => (string) $record->date_from, 'dateTo' => (string) $record->date_to,
+            'settledOn' => (string) $record->settled_on,
             'createdAt' => (string) $record->created_at,
             'balanceBefore' => Money::format(Money::cents((string) $record->balance_before)),
             'balanceAfter' => Money::format($balance),
