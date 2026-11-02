@@ -139,17 +139,25 @@ class AccountSettlementClosingTest extends OrdersTestCase
         $this->assertDatabaseCount('finance_collections', 1);
     }
 
-    public function test_unpaid_scope_cannot_be_forced_to_zero_or_overcollected(): void
+    public function test_unpaid_scope_can_record_zero_cash_evidence_but_cannot_overcollect(): void
     {
         $this->delivered($this->confirmed('1000.00'));
         $preview = $this->preview();
-        foreach (['0.00', '1000.01'] as $amount) {
-            $this->withHeader('Idempotency-Key', (string) Str::uuid())
-                ->postJson($this->base(), $this->payload($preview, $amount))
-                ->assertUnprocessable()->assertJsonValidationErrors('amount');
-        }
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->base(), $this->payload($preview, '1000.01'))
+            ->assertUnprocessable()->assertJsonValidationErrors('amount');
+        $saved = $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->base(), $this->payload($preview, '0.00'))
+            ->assertCreated()->assertJsonPath('data.status', 'partial')
+            ->assertJsonPath('data.balanceAfter', '1000.00')
+            ->assertJsonPath('data.amountCollected', '0.00')
+            ->assertJsonPath('data.collectionId', null)->json('data');
         $this->assertDatabaseCount('finance_collections', 0);
-        $this->assertDatabaseCount('finance_account_settlements', 0);
+        $this->assertDatabaseCount('finance_account_settlements', 1);
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->base(), $this->payload($this->preview(), '0.00'))
+            ->assertCreated()->assertJsonPath('data.id', $saved['id']);
+        $this->assertDatabaseCount('finance_account_settlements', 1);
     }
 
     public function test_past_work_cutoff_still_counts_payments_received_today(): void
