@@ -27,6 +27,10 @@ class AccountSettlementController extends Controller
 
     public function store(int $customer, CreateAccountSettlementRequest $request, AccountSettlementService $service): JsonResponse
     {
+        if ((float) $request->input('discountAmount', '0.00') > 0
+            && ! $request->user()->can('finance.settlements.discount')) {
+            abort(403);
+        }
         return ApiResponse::success(data: $service->confirm($customer, $request->validated(),
             (int) $request->user()->id, $request->idempotencyHash()),
             message: __('settlements.saved'), status: HttpStatusCode::CREATED);

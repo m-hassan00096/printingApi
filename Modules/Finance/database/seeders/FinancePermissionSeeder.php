@@ -10,7 +10,7 @@ class FinancePermissionSeeder extends Seeder
     public function run(): void
     {
         foreach ([
-            'balances.view', 'ledger.view', 'opening_balances.create',
+            'balances.view', 'ledger.view', 'opening_balances.create', 'settlements.discount',
             'collections.view', 'collections.create', 'collections.reverse', 'collections.correct',
             'refunds.view', 'refunds.create',
         ] as $name) {
