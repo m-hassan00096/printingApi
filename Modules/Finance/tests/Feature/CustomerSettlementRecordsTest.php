@@ -86,6 +86,7 @@ class CustomerSettlementRecordsTest extends OrdersTestCase
             ->assertJsonPath('data.balanceBefore', '350.00')
             ->assertJsonPath('data.balanceAfter', '200.00')
             ->assertJsonPath('data.status', 'partial')
+            ->assertJsonPath('data.createdByName', 'Orders Admin')
             ->assertJsonPath('data.statement.deliveredTotal', '350.00')
             ->assertJsonPath('data.statement.paymentsTotal', '50.00')
             ->assertJsonPath('data.statement.discountsTotal', '100.00')

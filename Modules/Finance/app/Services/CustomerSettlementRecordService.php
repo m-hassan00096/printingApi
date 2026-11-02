@@ -27,8 +27,9 @@ class CustomerSettlementRecordService
         $this->customers->display($customerId);
         $query = DB::table('finance_customer_settlements as s')
             ->leftJoin('finance_collections as c', 'c.id', '=', 's.collection_id')
+            ->leftJoin('users as u', 'u.id', '=', 's.created_by')
             ->where('s.customer_id', $customerId)
-            ->select('s.*', 'c.status as collection_status');
+            ->select('s.*', 'c.status as collection_status', 'u.name as created_by_name');
         $lastEnd = (clone $query)->max('date_to');
         $results = (clone $query)->orderByDesc('id')->paginate(15, ['*'], 'page', $page);
 
@@ -50,8 +51,9 @@ class CustomerSettlementRecordService
         $this->customers->display($customerId);
         $record = DB::table('finance_customer_settlements as s')
             ->leftJoin('finance_collections as c', 'c.id', '=', 's.collection_id')
+            ->leftJoin('users as u', 'u.id', '=', 's.created_by')
             ->where('s.customer_id', $customerId)->where('s.id', $id)
-            ->select('s.*', 'c.status as collection_status')->firstOrFail();
+            ->select('s.*', 'c.status as collection_status', 'u.name as created_by_name')->firstOrFail();
 
         return $this->summary($record) + [
             'note' => $record->note,
@@ -190,6 +192,7 @@ class CustomerSettlementRecordService
             'dateFrom' => (string) $record->date_from, 'dateTo' => (string) $record->date_to,
             'settledOn' => (string) $record->settled_on,
             'createdAt' => (string) $record->created_at,
+            'createdByName' => $record->created_by_name,
             'balanceBefore' => Money::format(Money::cents((string) $record->balance_before)),
             'balanceAfter' => Money::format($balance),
             'discountAmount' => Money::format($discount),
