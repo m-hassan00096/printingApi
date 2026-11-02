@@ -7,6 +7,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Modules\Customers\Contracts\CustomerFinanceReference;
 use Modules\Finance\Enums\CollectionSource;
+use Modules\Finance\Enums\CollectionStatus;
 use Modules\Finance\Enums\LedgerEntryType;
 use Modules\Finance\Exceptions\FinanceException;
 use Modules\Finance\Support\Money;
@@ -24,7 +25,10 @@ class CustomerSettlementRecordService
     public function index(int $customerId, int $page = 1): array
     {
         $this->customers->display($customerId);
-        $query = DB::table('finance_customer_settlements')->where('customer_id', $customerId);
+        $query = DB::table('finance_customer_settlements as s')
+            ->leftJoin('finance_collections as c', 'c.id', '=', 's.collection_id')
+            ->where('s.customer_id', $customerId)
+            ->select('s.*', 'c.status as collection_status');
         $lastEnd = (clone $query)->max('date_to');
         $results = (clone $query)->orderByDesc('id')->paginate(15, ['*'], 'page', $page);
 
@@ -44,8 +48,10 @@ class CustomerSettlementRecordService
     public function show(int $customerId, int $id): array
     {
         $this->customers->display($customerId);
-        $record = DB::table('finance_customer_settlements')
-            ->where('customer_id', $customerId)->where('id', $id)->firstOrFail();
+        $record = DB::table('finance_customer_settlements as s')
+            ->leftJoin('finance_collections as c', 'c.id', '=', 's.collection_id')
+            ->where('s.customer_id', $customerId)->where('s.id', $id)
+            ->select('s.*', 'c.status as collection_status')->firstOrFail();
 
         return $this->summary($record) + [
             'note' => $record->note,
@@ -188,6 +194,8 @@ class CustomerSettlementRecordService
             'balanceAfter' => Money::format($balance),
             'discountAmount' => Money::format($discount),
             'collectedAmount' => Money::format($collected),
+            // A reversed receipt changes today's balance, not the issued snapshot.
+            'collectionReversed' => (int) ($record->collection_status ?? 0) === CollectionStatus::REVERSED->value,
             'status' => $balance <= 0 ? 'settled' : ($collected > 0 || $discount > 0 ? 'partial' : 'unpaid'),
         ];
     }
