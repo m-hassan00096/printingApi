@@ -196,7 +196,8 @@ class CustomerSettlementRecordService
             'collectedAmount' => Money::format($collected),
             // A reversed receipt changes today's balance, not the issued snapshot.
             'collectionReversed' => (int) ($record->collection_status ?? 0) === CollectionStatus::REVERSED->value,
-            'status' => $balance <= 0 ? 'settled' : ($collected > 0 || $discount > 0 ? 'partial' : 'unpaid'),
+            'status' => $balance < 0 ? 'credit' : ($balance === 0 ? 'settled'
+                : ($collected > 0 || $discount > 0 ? 'partial' : 'unpaid')),
         ];
     }
 }

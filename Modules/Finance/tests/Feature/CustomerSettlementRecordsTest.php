@@ -294,6 +294,21 @@ class CustomerSettlementRecordsTest extends OrdersTestCase
     }
 
 
+    public function test_credit_balance_can_be_saved_without_discount_or_collection(): void
+    {
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/finance/collections', [
+                'customerId' => $this->customer->id,
+                'amount' => '40.00', 'paymentMethod' => 0,
+            ])->assertCreated();
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->root(), $this->settlement())->assertCreated()
+            ->assertJsonPath('data.balanceBefore', '-40.00')
+            ->assertJsonPath('data.balanceAfter', '-40.00')
+            ->assertJsonPath('data.status', 'credit');
+        $this->assertDatabaseCount('finance_collections', 1);
+    }
+
     public function test_requires_discount_reason_and_valid_payment_details(): void
     {
         $this->delivered('250.00');
