@@ -66,7 +66,8 @@ class CustomerSettlementService
 
         // Read actual immutable cash entries, not receipt status or settlement snapshots.
         $types = [LedgerEntryType::COLLECTION->value, LedgerEntryType::COLLECTION_REVERSAL->value,
-            LedgerEntryType::REFUND->value, LedgerEntryType::OPENING_BALANCE->value];
+            LedgerEntryType::REFUND->value, LedgerEntryType::OPENING_BALANCE->value,
+            LedgerEntryType::SETTLEMENT_DISCOUNT->value];
         $movements = DB::table('finance_ledger_entries as l')
             ->leftJoin('finance_collections as c', 'c.id', '=', 'l.collection_id')
             ->leftJoin('finance_refunds as r', 'r.id', '=', 'l.refund_id')
@@ -79,6 +80,7 @@ class CustomerSettlementService
             $kind = match ($type) {
                 LedgerEntryType::COLLECTION => 'collection', LedgerEntryType::COLLECTION_REVERSAL => 'collection_reversal',
                 LedgerEntryType::REFUND => 'refund', LedgerEntryType::OPENING_BALANCE => 'opening_balance',
+                LedgerEntryType::SETTLEMENT_DISCOUNT => 'settlement_discount',
                 default => throw new \LogicException('Unexpected settlement movement'),
             };
             $events[] = [
@@ -91,13 +93,14 @@ class CustomerSettlementService
             ];
         }
         usort($events, static fn (array $a, array $b): int => [$a['date'], $a['sort']] <=> [$b['date'], $b['sort']]);
-        $opening = $deliveredTotal = $paymentsTotal = $adjustmentsTotal = $balance = 0;
+        $opening = $deliveredTotal = $paymentsTotal = $adjustmentsTotal = $discountsTotal = $balance = 0;
         $lines = [];
         foreach ($events as $event) {
             $cents = $event['cents'];
             if ($event['date'] < $from) {$opening += $cents; $balance += $cents; continue;}
             if (in_array($event['kind'], ['delivered_item', 'delivery_cancellation'], true)) $deliveredTotal += $cents;
             elseif ($event['kind'] === 'opening_balance') $adjustmentsTotal += $cents;
+            elseif ($event['kind'] === 'settlement_discount') $discountsTotal -= $cents;
             else $paymentsTotal -= $cents;
             $balance += $cents;
             unset($event['sort'], $event['cents']);
@@ -111,6 +114,7 @@ class CustomerSettlementService
             'customerId' => $customerId, 'customerName' => $customer['name'], 'customerPhone' => $customer['phone'],
             'dateFrom' => $from, 'dateTo' => $to, 'openingBalance' => Money::format($opening),
             'deliveredTotal' => Money::format($deliveredTotal), 'paymentsTotal' => Money::format($paymentsTotal),
+            'discountsTotal' => Money::format($discountsTotal),
             'adjustmentsTotal' => Money::format($adjustmentsTotal), 'closingBalance' => Money::format($balance),
             'financeBalanceAsOf' => Money::format($financeBalance),
             'undeliveredDifference' => Money::format($financeBalance - $balance), 'lines' => $lines,
