@@ -4,7 +4,7 @@ return [
     'payment_methods' => ['cash' => 'نقدي', 'bank_transfer' => 'تحويل بنكي', 'e_wallet' => 'محفظة إلكترونية'],
     'collection_sources' => ['general' => 'تحصيل عام', 'order_deposit' => 'عربون أوردر', 'delivery' => 'تسليم'],
     'collection_statuses' => ['posted' => 'مسجل', 'reversed' => 'معكوس'],
-    'ledger_types' => ['order_debt' => 'مديونية أوردر', 'collection' => 'تحصيل', 'order_cancellation' => 'إلغاء أوردر', 'collection_reversal' => 'عكس تحصيل', 'refund' => 'مرتجع مالي', 'opening_balance' => 'رصيد افتتاحي'],
+    'ledger_types' => ['order_debt' => 'مديونية أوردر', 'collection' => 'تحصيل', 'order_cancellation' => 'إلغاء أوردر', 'collection_reversal' => 'عكس تحصيل', 'refund' => 'مرتجع مالي', 'opening_balance' => 'رصيد افتتاحي', 'settlement_discount' => 'خصم تصفية الحساب'],
     'messages' => [
         'customer_not_found' => 'العميل غير موجود',
         'amount_out_of_range' => 'المبلغ خارج الحدود المسموحة',
@@ -27,10 +27,17 @@ return [
         'invalid_destination' => 'الحساب أو المحفظة غير متاح',
         'invalid_order' => 'الأوردر غير مرتبط بالعميل',
         'positive_amount' => 'المبلغ يجب أن يكون أكبر من صفر',
+        'settlement_created' => 'تم حفظ التصفية بنجاح',
+        'settlement_period_overlap' => 'الفترة تتداخل مع تصفية محفوظة بالفعل',
+        'settlement_discount_exceeds_due' => 'الخصم يتجاوز المديونية المستحقة عن الشغل المستلم',
+        'settlement_collection_exceeds_due' => 'التحصيل يتجاوز المتبقي بعد الخصم',
+        'settlement_discount_reason_required' => 'أدخل سبب الخصم (3 حروف على الأقل)',
+        'settlement_payment_without_collection' => 'طريقة الدفع مطلوبة فقط عند تسجيل تحصيل',
     ],
     'permissions' => [
         'balances' => ['view' => 'عرض أرصدة العملاء'],
         'ledger' => ['view' => 'عرض كشف حساب العميل'],
+        'settlements' => ['view' => 'عرض سجل التصفيات', 'create' => 'حفظ تصفية جديدة', 'discount' => 'تطبيق خصم على التصفية'],
         'opening_balances' => ['create' => 'تسجيل رصيد افتتاحي'],
         'collections' => [
             'view' => 'عرض التحصيلات',

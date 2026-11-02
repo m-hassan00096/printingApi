@@ -103,6 +103,7 @@ class CustomerSettlementService
             LedgerEntryType::COLLECTION_REVERSAL->value,
             LedgerEntryType::REFUND->value,
             LedgerEntryType::OPENING_BALANCE->value,
+            LedgerEntryType::SETTLEMENT_DISCOUNT->value,
         ];
         $movements = DB::table('finance_ledger_entries as l')
             ->leftJoin('finance_collections as c', 'c.id', '=', 'l.collection_id')
@@ -124,6 +125,7 @@ class CustomerSettlementService
                 LedgerEntryType::COLLECTION_REVERSAL => 'collection_reversal',
                 LedgerEntryType::REFUND => 'refund',
                 LedgerEntryType::OPENING_BALANCE => 'opening_balance',
+                LedgerEntryType::SETTLEMENT_DISCOUNT => 'settlement_discount',
                 default => throw new \LogicException('Unexpected settlement movement'),
             };
             $label = match ($type) {
@@ -131,6 +133,7 @@ class CustomerSettlementService
                 LedgerEntryType::COLLECTION_REVERSAL => 'عكس تحصيل',
                 LedgerEntryType::REFUND => 'رد مبلغ للعميل',
                 LedgerEntryType::OPENING_BALANCE => 'رصيد افتتاحي',
+                LedgerEntryType::SETTLEMENT_DISCOUNT => 'خصم تصفية حساب',
                 default => '',
             };
             $events[] = [
@@ -155,6 +158,7 @@ class CustomerSettlementService
         $opening = 0;
         $deliveredTotal = 0;
         $paymentsTotal = 0;
+        $discountsTotal = 0;
         $adjustmentsTotal = 0;
         $balance = 0;
         $lines = [];
@@ -170,6 +174,8 @@ class CustomerSettlementService
                 $deliveredTotal += $cents;
             } elseif ($event['kind'] === 'opening_balance') {
                 $adjustmentsTotal += $cents;
+            } elseif ($event['kind'] === 'settlement_discount') {
+                $discountsTotal -= $cents;
             } else {
                 $paymentsTotal -= $cents;
             }
@@ -194,6 +200,7 @@ class CustomerSettlementService
             'openingBalance' => Money::format($opening),
             'deliveredTotal' => Money::format($deliveredTotal),
             'paymentsTotal' => Money::format($paymentsTotal),
+            'discountsTotal' => Money::format($discountsTotal),
             'adjustmentsTotal' => Money::format($adjustmentsTotal),
             'closingBalance' => Money::format($balance),
             // Internal-use reconciliation, not a balance to print for customers.

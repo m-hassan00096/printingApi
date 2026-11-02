@@ -11,6 +11,7 @@ class FinancePermissionSeeder extends Seeder
     {
         foreach ([
             'balances.view', 'ledger.view', 'opening_balances.create',
+            'settlements.view', 'settlements.create', 'settlements.discount',
             'collections.view', 'collections.create', 'collections.reverse', 'collections.correct',
             'refunds.view', 'refunds.create',
         ] as $name) {
