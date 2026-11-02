@@ -4,7 +4,7 @@ return [
     'payment_methods' => ['cash' => 'Cash', 'bank_transfer' => 'Bank transfer', 'e_wallet' => 'E-wallet'],
     'collection_sources' => ['general' => 'General collection', 'order_deposit' => 'Order deposit', 'delivery' => 'Delivery'],
     'collection_statuses' => ['posted' => 'Posted', 'reversed' => 'Reversed'],
-    'ledger_types' => ['order_debt' => 'Order debt', 'collection' => 'Collection', 'order_cancellation' => 'Order cancellation', 'collection_reversal' => 'Collection reversal', 'refund' => 'Refund', 'opening_balance' => 'Opening balance'],
+    'ledger_types' => ['order_debt' => 'Order debt', 'collection' => 'Collection', 'order_cancellation' => 'Order cancellation', 'collection_reversal' => 'Collection reversal', 'refund' => 'Refund', 'opening_balance' => 'Opening balance', 'settlement_discount' => 'Settlement discount'],
     'messages' => [
         'customer_not_found' => 'Customer not found', 'amount_out_of_range' => 'Amount out of range',
         'duplicate_operation' => 'Operation was already posted', 'idempotency_required' => 'Idempotency key is required',
@@ -24,6 +24,7 @@ return [
     'permissions' => [
         'balances' => ['view' => 'View customer balances'],
         'ledger' => ['view' => 'View customer ledger'],
+        'settlements' => ['discount' => 'Apply fixed discount to customer account settlement'],
         'opening_balances' => ['create' => 'Create opening balance'],
         'collections' => [
             'view' => 'View collections',

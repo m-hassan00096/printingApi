@@ -4,7 +4,7 @@ return [
     'payment_methods' => ['cash' => 'نقدي', 'bank_transfer' => 'تحويل بنكي', 'e_wallet' => 'محفظة إلكترونية'],
     'collection_sources' => ['general' => 'تحصيل عام', 'order_deposit' => 'عربون أوردر', 'delivery' => 'تسليم'],
     'collection_statuses' => ['posted' => 'مسجل', 'reversed' => 'معكوس'],
-    'ledger_types' => ['order_debt' => 'مديونية أوردر', 'collection' => 'تحصيل', 'order_cancellation' => 'إلغاء أوردر', 'collection_reversal' => 'عكس تحصيل', 'refund' => 'مرتجع مالي', 'opening_balance' => 'رصيد افتتاحي'],
+    'ledger_types' => ['order_debt' => 'مديونية أوردر', 'collection' => 'تحصيل', 'order_cancellation' => 'إلغاء أوردر', 'collection_reversal' => 'عكس تحصيل', 'refund' => 'مرتجع مالي', 'opening_balance' => 'رصيد افتتاحي', 'settlement_discount' => 'خصم تصفية حساب'],
     'messages' => [
         'customer_not_found' => 'العميل غير موجود',
         'amount_out_of_range' => 'المبلغ خارج الحدود المسموحة',
@@ -31,6 +31,7 @@ return [
     'permissions' => [
         'balances' => ['view' => 'عرض أرصدة العملاء'],
         'ledger' => ['view' => 'عرض كشف حساب العميل'],
+        'settlements' => ['discount' => 'تطبيق خصم ثابت على تصفية حساب العميل'],
         'opening_balances' => ['create' => 'تسجيل رصيد افتتاحي'],
         'collections' => [
             'view' => 'عرض التحصيلات',
