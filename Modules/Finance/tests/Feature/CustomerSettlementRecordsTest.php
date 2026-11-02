@@ -191,6 +191,78 @@ class CustomerSettlementRecordsTest extends OrdersTestCase
             ->where('type', LedgerEntryType::SETTLEMENT_DISCOUNT->value)->count());
     }
 
+
+    public function test_past_work_period_posts_discount_and_receipt_on_the_actual_day(): void
+    {
+        $today = now('Africa/Cairo')->toDateString();
+        $yesterday = now('Africa/Cairo')->subDay()->toDateString();
+        $order = $this->delivered('350.00');
+        \Illuminate\Support\Facades\DB::table('deliveries')
+            ->where('order_id', $order->id)->update(['delivered_local_date' => $yesterday]);
+
+        $saved = $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->root(), $this->settlement([
+                'dateFrom' => $yesterday, 'dateTo' => $yesterday,
+                'discountAmount' => '100.00', 'discountReason' => 'Old-work settlement',
+                'collectedAmount' => '50.00', 'paymentMethod' => 0,
+            ]))->assertCreated()
+            ->assertJsonPath('data.settledOn', $today)
+            ->assertJsonPath('data.dateTo', $yesterday)
+            ->assertJsonPath('data.statement.closingBalance', '200.00')
+            ->assertJsonPath('data.statement.lines.1.date', $today)
+            ->assertJsonPath('data.statement.lines.2.date', $today)->json('data');
+
+        $this->assertDatabaseHas('finance_ledger_entries', [
+            'type' => LedgerEntryType::SETTLEMENT_DISCOUNT->value,
+            'effective_date' => $today,
+            'signed_amount' => '-100.00',
+        ]);
+        $this->assertDatabaseHas('finance_collections', [
+            'id' => $saved['collectionId'],
+            'collected_on' => $today, 'amount' => '50.00',
+        ]);
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id
+            .'/settlement?dateFrom='.$yesterday.'&dateTo='.$yesterday)
+            ->assertOk()->assertJsonPath('data.closingBalance', '350.00');
+        $this->getJson($this->root().'/'.$saved['id'])->assertOk()
+            ->assertJsonPath('data.statement.closingBalance', '200.00');
+
+        // The next period inherits real-day movements without losing historic work.
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id
+            .'/settlement?dateFrom='.$today.'&dateTo='.$today)
+            ->assertOk()->assertJsonPath('data.openingBalance', '350.00')
+            ->assertJsonPath('data.discountsTotal', '100.00')
+            ->assertJsonPath('data.paymentsTotal', '50.00')
+            ->assertJsonPath('data.closingBalance', '200.00');
+    }
+
+    public function test_settlement_only_view_role_can_read_without_full_finance_ledger_permission(): void
+    {
+        $this->adminRole->revokePermissionTo('finance.ledger.view');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $today = now('Africa/Cairo')->toDateString();
+
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id
+            .'/settlement?dateFrom='.$today.'&dateTo='.$today)->assertOk();
+        $this->getJson($this->root())->assertOk();
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id.'/ledger')->assertForbidden();
+    }
+
+    public function test_cannot_record_a_collection_without_collection_create_permission(): void
+    {
+        $this->delivered('120.00');
+        $this->adminRole->revokePermissionTo('finance.collections.create');
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->root(), $this->settlement([
+                'collectedAmount' => '30.00', 'paymentMethod' => 0,
+            ]))->assertForbidden();
+        $this->assertDatabaseCount('finance_customer_settlements', 0);
+        $this->assertDatabaseCount('finance_collections', 0);
+    }
+
+
     public function test_requires_discount_reason_and_valid_payment_details(): void
     {
         $this->delivered('250.00');
