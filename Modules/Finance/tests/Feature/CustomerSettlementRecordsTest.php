@@ -263,6 +263,37 @@ class CustomerSettlementRecordsTest extends OrdersTestCase
     }
 
 
+
+    public function test_reversed_receipt_is_flagged_without_rewriting_issued_statement(): void
+    {
+        $this->adminRole->givePermissionTo(
+            Permission::findOrCreate('finance.collections.reverse', 'web')
+        );
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $this->delivered('250.00');
+
+        $saved = $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->root(), $this->settlement([
+                'collectedAmount' => '50.00', 'paymentMethod' => 0,
+            ]))->assertCreated()->assertJsonPath('data.collectionReversed', false)->json('data');
+
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson('/api/v1/finance/collections/'.$saved['collectionId'].'/reverse', [
+                'reason' => 'Receipt entered by mistake',
+            ])->assertOk();
+
+        $this->getJson($this->root().'/'.$saved['id'])->assertOk()
+            ->assertJsonPath('data.collectionReversed', true)
+            ->assertJsonPath('data.statement.closingBalance', '200.00');
+        $this->getJson($this->root())->assertOk()
+            ->assertJsonPath('data.settlements.0.collectionReversed', true);
+        $today = now('Africa/Cairo')->toDateString();
+        $this->getJson('/api/v1/finance/customers/'.$this->customer->id
+            .'/settlement?dateFrom='.$today.'&dateTo='.$today)
+            ->assertOk()->assertJsonPath('data.closingBalance', '250.00');
+    }
+
+
     public function test_requires_discount_reason_and_valid_payment_details(): void
     {
         $this->delivered('250.00');
