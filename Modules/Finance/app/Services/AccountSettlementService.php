@@ -82,7 +82,7 @@ final class AccountSettlementService
             // Legacy frontends that do not yet send dateFrom still register the
             // server-derived date. Older persisted rows remain NULL (unknown).
             $dateFrom = $data['dateFrom'] ?? $earliest;
-            if ($dateFrom < $earliest || $dateFrom > $data['dateTo']) {
+            if (($latest !== null && $dateFrom < $earliest) || $dateFrom > $data['dateTo']) {
                 throw ValidationException::withMessages([
                     'dateFrom' => 'بداية الفترة يجب أن تكون بعد آخر تصفية ولا تتجاوز تاريخ النهاية.',
                 ]);
