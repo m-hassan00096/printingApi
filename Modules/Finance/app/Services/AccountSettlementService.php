@@ -4,6 +4,7 @@ namespace Modules\Finance\Services;
 
 use App\Enums\HttpStatusCode;
 use App\Helpers\ApiResponse;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -65,11 +66,34 @@ final class AccountSettlementService
             if (DB::table('finance_account_settlements')->where('customer_id', $customerId)
                 ->where('preview_hash', $before['previewHash'])->exists()) $this->stale();
 
+            // Report dates are evidence metadata, not a filter on the cumulative
+            // settlement debt. Validate under the customer lock to prevent an
+            // intervening posted settlement from overlapping the next period.
+            $latest = DB::table('finance_account_settlements')->where('customer_id', $customerId)
+                ->orderByDesc('id')->lockForUpdate()->first();
+            if ($latest !== null && $latest->scope_to > $data['dateTo']) {
+                throw ValidationException::withMessages([
+                    'dateTo' => 'نهاية الفترة أقدم من آخر تصفية مسجّلة.',
+                ]);
+            }
+            $earliest = $latest === null
+                ? substr($data['dateTo'], 0, 7).'-01'
+                : min($data['dateTo'], CarbonImmutable::parse($latest->scope_to)->addDay()->toDateString());
+            // Legacy frontends that do not yet send dateFrom still register the
+            // server-derived date. Older persisted rows remain NULL (unknown).
+            $dateFrom = $data['dateFrom'] ?? $earliest;
+            if (($latest !== null && $dateFrom < $earliest) || $dateFrom > $data['dateTo']) {
+                throw ValidationException::withMessages([
+                    'dateFrom' => 'بداية الفترة يجب أن تكون بعد آخر تصفية ولا تتجاوز تاريخ النهاية.',
+                ]);
+            }
+
             $balanceAfter = Money::cents($before['balanceBefore']) - $amount - $discount;
             $status = $balanceAfter > 0 ? 'partial' : ($balanceAfter < 0 ? 'credit' : 'closed');
             $today = now('Africa/Cairo')->toDateString();
             $id = DB::table('finance_account_settlements')->insertGetId([
-                'customer_id' => $customerId, 'scope_to' => $data['dateTo'], 'settled_on' => $today,
+                'customer_id' => $customerId, 'scope_from' => $dateFrom,
+                'scope_to' => $data['dateTo'], 'settled_on' => $today,
                 'status' => $status, 'balance_before' => $before['balanceBefore'],
                 'collected_amount' => Money::format($amount), 'balance_after' => Money::format($balanceAfter),
                 'discount_amount' => Money::format($discount),
@@ -144,7 +168,9 @@ final class AccountSettlementService
         $money = static fn ($value): string => Money::format(Money::cents((string) $value));
         $result = [
             'id' => (int) $row->id, 'number' => $row->settlement_number,
-            'customerId' => (int) $row->customer_id, 'dateTo' => $row->scope_to, 'settledOn' => $row->settled_on,
+            'customerId' => (int) $row->customer_id,
+            'dateFrom' => $row->scope_from === null ? null : (string) $row->scope_from,
+            'dateTo' => $row->scope_to, 'settledOn' => $row->settled_on,
             'status' => $status, 'originalStatus' => $row->status, 'statusLabel' => __('settlements.status.'.$status),
             'needsReview' => $review,
             'balanceBefore' => $money($row->balance_before), 'amountCollected' => $money($row->collected_amount),

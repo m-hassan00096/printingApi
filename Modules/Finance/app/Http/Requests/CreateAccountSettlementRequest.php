@@ -16,6 +16,7 @@ class CreateAccountSettlementRequest extends FinanceWriteRequest
         $method = $this->input('paymentMethod');
         $nonCash = (is_int($method) || is_string($method)) && in_array((string) $method, ['1', '2'], true);
         return [
+            'dateFrom' => ['sometimes', 'required', 'date_format:Y-m-d', 'before_or_equal:dateTo'],
             'dateTo' => ['required', 'date_format:Y-m-d', 'before_or_equal:'.now('Africa/Cairo')->toDateString()],
             'previewHash' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/D'],
             'amount' => ['required', 'string', 'regex:/\A(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,2})?\z/D'],

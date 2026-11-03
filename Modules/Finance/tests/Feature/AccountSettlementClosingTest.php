@@ -221,4 +221,96 @@ class AccountSettlementClosingTest extends OrdersTestCase
         $this->withHeader('Idempotency-Key', (string) Str::uuid())
             ->postJson($this->base(), $this->payload($this->preview(), '0.00'))->assertForbidden();
     }
+    public function test_customer_settlement_stores_explicit_from_and_to_dates_in_history_and_show(): void
+    {
+        $this->delivered($this->confirmed('1000.00'));
+        $preview = $this->preview();
+        // On a first settlement the operator may choose a real start before this month.
+        $from = now('Africa/Cairo')->startOfMonth()->subDays(4)->toDateString();
+        $body = $this->payload($preview, '250.00');
+        $body['dateFrom'] = $from;
+
+        $key = (string) Str::uuid();
+        $saved = $this->withHeader('Idempotency-Key', $key)
+            ->postJson($this->base(), $body)
+            ->assertCreated()
+            ->assertJsonPath('data.dateFrom', $from)
+            ->assertJsonPath('data.dateTo', $preview['dateTo'])
+            ->assertJsonPath('data.amountCollected', '250.00')
+            ->assertJsonPath('data.balanceAfter', '750.00')->json('data');
+
+        $this->assertDatabaseHas('finance_account_settlements', [
+            'id' => $saved['id'],
+            'scope_from' => $from,
+            'scope_to' => $preview['dateTo'],
+        ]);
+        $this->getJson($this->base().'/'.$saved['id'])->assertOk()
+            ->assertJsonPath('data.dateFrom', $from)
+            ->assertJsonPath('data.dateTo', $preview['dateTo']);
+        $this->getJson($this->base())->assertOk()
+            ->assertJsonPath('data.settlements.0.dateFrom', $from)
+            ->assertJsonPath('data.settlements.0.dateTo', $preview['dateTo']);
+        $this->withHeader('Idempotency-Key', $key)
+            ->postJson($this->base(), $body)->assertCreated()->assertJsonPath('data.id', $saved['id']);
+        $this->assertDatabaseCount('finance_collections', 1);
+        $this->assertDatabaseCount('finance_account_settlements', 1);
+    }
+
+    public function test_settlement_start_date_is_checked_under_lock_against_prior_scope_and_future_cutoff(): void
+    {
+        $delivery = $this->delivered($this->confirmed('1000.00'));
+        $yesterday = now('Africa/Cairo')->subDay()->toDateString();
+        $today = now('Africa/Cairo')->toDateString();
+        DB::table('deliveries')->where('id', $delivery->id)
+            ->update(['delivered_local_date' => $yesterday]);
+
+        $previous = $this->preview($yesterday);
+        $first = $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->base(), $this->payload($previous, '300.00'))
+            ->assertCreated()->json('data');
+        $this->assertNotNull($first['dateFrom']); // old clients get a server-derived start
+        $this->assertSame($yesterday, $first['dateTo']);
+
+        $current = $this->preview();
+        $body = $this->payload($current, '200.00');
+        $body['dateFrom'] = $yesterday;
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->base(), $body)
+            ->assertUnprocessable()->assertJsonValidationErrors('dateFrom');
+
+        $body['dateFrom'] = now('Africa/Cairo')->addDay()->toDateString();
+        $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->base(), $body)
+            ->assertUnprocessable()->assertJsonValidationErrors('dateFrom');
+
+        $body['dateFrom'] = $today;
+        $saved = $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->base(), $body)
+            ->assertCreated()->assertJsonPath('data.dateFrom', $today)
+            ->assertJsonPath('data.dateTo', $today)
+            ->assertJsonPath('data.balanceAfter', '500.00')->json('data');
+        $this->assertSame('500.00', $saved['balanceAfter']);
+        $this->assertDatabaseCount('finance_account_settlements', 2);
+        $this->assertDatabaseCount('finance_collections', 2);
+    }
+
+    public function test_historical_rows_with_unknown_start_remain_null_instead_of_rewritten(): void
+    {
+        $this->delivered($this->confirmed('1000.00'));
+        $saved = $this->withHeader('Idempotency-Key', (string) Str::uuid())
+            ->postJson($this->base(), $this->payload($this->preview(), '200.00'))
+            ->assertCreated()->json('data');
+
+        // Rows written before the migration are NULL and must not be retroactively
+        // assigned a date that may never have been agreed with the customer.
+        DB::table('finance_account_settlements')->where('id', $saved['id'])->update(['scope_from' => null]);
+        $this->getJson($this->base().'/'.$saved['id'])->assertOk()
+            ->assertJsonPath('data.dateFrom', null)
+            ->assertJsonPath('data.dateTo', $saved['dateTo']);
+        $this->getJson($this->base())->assertOk()
+            ->assertJsonPath('data.settlements.0.dateFrom', null);
+        $this->assertSame('800.00', $this->preview()['dueNow']);
+    }
+
+
 }
