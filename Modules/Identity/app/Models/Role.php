@@ -7,7 +7,6 @@ use Modules\Identity\Enums\RoleStatus;
 use Spatie\Permission\Models\Role as SpatieRole;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Spatie\Permission\PermissionRegistrar;
-use Spatie\Permission\Support\Config;
 
 class Role extends SpatieRole
 {
@@ -34,9 +33,9 @@ class Role extends SpatieRole
         return $this->morphedByMany(
             User::class,
             'model',
-            Config::modelHasRolesTable(),
+            config('permission.table_names.model_has_roles'),
             app(PermissionRegistrar::class)->pivotRole,
-            Config::morphKey()
+            config('permission.column_names.model_morph_key')
         );
     }
 }

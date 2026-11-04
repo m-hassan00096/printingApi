@@ -8,7 +8,6 @@ use Modules\Identity\Exceptions\Users\LastActiveAdminException;
 use Modules\Identity\Models\Role;
 use Modules\Identity\Models\User;
 use Spatie\Permission\PermissionRegistrar;
-use Spatie\Permission\Support\Config;
 
 /**
  * Run inside the same database transaction that modifies a user's role/status.
@@ -70,9 +69,9 @@ class LastActiveAdminGuard
             return;
         }
 
-        $pivot = Config::modelHasRolesTable();
+        $pivot = config('permission.table_names.model_has_roles');
         $roleColumn = app(PermissionRegistrar::class)->pivotRole;
-        $modelColumn = Config::morphKey();
+        $modelColumn = config('permission.column_names.model_morph_key');
 
         $isAdmin = DB::table($pivot)
             ->where($roleColumn, $admin->getKey())
